@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-to-a-secure-random-string}
+      - SSH_CREDENTIAL_KEY=${SSH_CREDENTIAL_KEY:-must-be-exactly-32-bytes-long!!!}
+      - DATABASE_URL=data/serverdock.db
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
+      - DEBUG=${DEBUG:-false}
+      - PORT=8000
+    volumes:
+      - serverdock-data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  serverdock-data:
