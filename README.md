@@ -1,118 +1,76 @@
 # ServerDock
 
-Web-based server management system for managing remote servers via SSH, Docker containers, images, volumes, and container application/approval workflows with email notifications.
+ServerDock is a web console for managing remote servers, Docker containers, images, volumes, SSH terminals, and container application workflows.
 
-## Tech Stack
+## One-command deployment
 
-- **Backend:** Go + Gin + GORM + SQLite
-- **Frontend:** Vue 3 + Vite
-- **Deployment:** Docker Compose + Nginx reverse proxy
-
-## Quick Start
-
-### 1. Clone
+Requirements: Docker with the Compose plugin, and OpenSSL.
 
 ```bash
 git clone <repo-url>
 cd ServerDock
+./scripts/deploy.sh <hostname-or-ip>
 ```
 
-### 2. Configure Environment
+For a server behind NAT or a campus firewall, create a remotely managed Cloudflare Tunnel, set its public hostname to `http://frontend:80`, and run:
 
 ```bash
-cp .env.example .env
+./scripts/deploy.sh --cloudflare-tunnel serverdock.example.com
 ```
 
-Edit `.env`, change `SECRET_KEY` and `SSH_CREDENTIAL_KEY`, and set `PUBLIC_URL` to the address administrators use to open ServerDock. Generate random keys:
+The script asks for the tunnel token without displaying it. It then automatically:
+
+- creates `.env` with random JWT and SSH encryption keys;
+- creates a SAN-enabled self-signed HTTPS certificate;
+- builds and starts the Docker Compose services;
+- reuses existing secrets, certificates, and data when run again.
+
+The initial administrator account is `admin` / `admin123`. Change its password immediately after signing in. The production frontend exposes HTTPS only, on port 443 by default.
+
+With Cloudflare Tunnel, Cloudflare manages the browser-facing trusted certificate and no inbound port is required. Without Tunnel, the generated certificate is self-signed and must be trusted on each client device or replaced with a CA-issued certificate.
+
+## Configuration
+
+Deployment settings are stored in the generated `.env`. Keep this file private and do not delete it: `SSH_CREDENTIAL_KEY` is required to decrypt stored server credentials.
+
+To use non-standard ports on the first deployment:
 
 ```bash
-# Generate SSH_CREDENTIAL_KEY (exactly 32 characters)
-openssl rand -base64 24
-
-# Generate SECRET_KEY
-openssl rand -base64 32
+HTTPS_PORT=8443 ./scripts/deploy.sh serverdock.example.com
 ```
 
-### 3. Deploy with Docker Compose
+To use your own certificate without Cloudflare Tunnel, update these values in `.env` and run `./scripts/deploy.sh` again:
 
-```bash
-docker compose up -d --build
+```dotenv
+PUBLIC_URL=https://serverdock.example.com
+TLS_CERT_PATH=/absolute/path/to/fullchain.pem
+TLS_KEY_PATH=/absolute/path/to/privkey.pem
 ```
-
-Access the application at `http://<your-ip>:8080`.
-
-### 4. Login
-
-Use the admin credentials configured above (default: `admin` / `admin123`).
 
 ## Development
+
+After running `./scripts/deploy.sh localhost` once, start the hot-reload stack with:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-- Frontend (hot-reload): `http://localhost:3000`
+- Frontend: `https://localhost:3000`
 - Backend API: `http://localhost:8000`
 
-## Architecture
+Backend tests and frontend builds:
 
-```
-                    ┌──────────┐
-   Browser ──────── │  Nginx   │ :8080
-                    │ (frontend)│
-                    └────┬─────┘
-                         │ /api/*
-                    ┌────▼─────┐
-                    │  Go API  │ :8000
-                    │ (backend)│
-                    └────┬─────┘
-                         │ SSH
-                    ┌────▼─────┐
-                    │  Remote  │
-                    │ Servers  │
-                    └──────────┘
+```bash
+cd backend && mise exec -- go test ./...
+cd frontend && mise exec -- npm run build
 ```
 
-## Features
+## Main features
 
-- **Server Management** — Add/edit/delete remote servers, test SSH connections
-- **Container Management** — Create/start/stop/restart/delete Docker containers with automatic port allocation
-- **Image Management** — List/pull/delete remote Docker images, mark images as available for users
-- **Volume Management** — Create/list/delete Docker volumes
-- **Web Terminal** — Interactive SSH terminal to servers and containers via WebSocket
-- **Application Workflow** — Public users submit container requests, admins approve/reject with email notifications
-- **Email Approval Actions** — Admin notification emails include one-click ignore, reject, and approve actions with signed, expiring links; open admin views synchronize automatically
-- **System Config** — Port range, extra ports, volume mount path, SMTP settings, all configurable via UI
-
-## API Overview
-
-| Group | Prefix | Auth |
-|-------|--------|------|
-| Auth | `/api/auth/*` | No (login) / Yes |
-| Servers | `/api/servers/*` | Yes |
-| Images (DB) | `/api/images/*` | Yes |
-| Images (Remote) | `/api/servers/:id/images/*` | Yes |
-| Containers | `/api/servers/:id/containers/*` | Yes |
-| Volumes | `/api/servers/:id/volumes/*` | Yes |
-| Applications (Public) | `/api/applications/public/*` | No |
-| Applications (Admin) | `/api/applications/*` | Yes |
-| Config | `/api/config/*` | Yes |
-| Terminal (WS) | `/api/terminal/*` | Yes (query param) |
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SECRET_KEY` | Yes | — | JWT signing key |
-| `SSH_CREDENTIAL_KEY` | Yes | — | AES-256-GCM encryption key (32 chars) |
-| `PUBLIC_URL` | For email actions | — | Public browser origin used in administrator email action links; can be overridden in System Config |
-| `DATABASE_URL` | No | `data/serverdock.db` | SQLite database path |
-| `DEFAULT_ADMIN_USERNAME` | No | `admin` | Initial admin username |
-| `DEFAULT_ADMIN_PASSWORD` | No | `admin123` | Initial admin password |
-| `DEBUG` | No | `false` | Enable debug mode |
-| `PORT` | No | `8080` | Host port (compose) |
-
-Email action links expire after seven days and become unusable as soon as the application is processed. The security token is placed in the URL fragment and submitted with POST by the action page, so an email gateway fetching the link with GET cannot approve an application. Keep administrator notification emails private because each link carries approval authority.
+- Remote server, Docker container, image, and volume management
+- Browser-based SSH and container terminals over WSS
+- Public container applications with administrator approval and email notifications
+- Configurable ports, mounts, SMTP, and administrator credentials
 
 ## License
 

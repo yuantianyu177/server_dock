@@ -21,9 +21,34 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${PORT:-8080}:80"
+      - "${HTTPS_PORT:-${PORT:-443}}:443"
+    volumes:
+      - type: bind
+        source: ${TLS_CERT_PATH:-./certs/serverdock.crt}
+        target: /etc/nginx/tls/serverdock.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TLS_KEY_PATH:-./certs/serverdock.key}
+        target: /etc/nginx/tls/serverdock.key
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       - backend
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --loglevel info run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+      TUNNEL_URL: ${CLOUDFLARE_TUNNEL_URL:-http://frontend:80}
+    depends_on:
+      - frontend
+    profiles:
+      - cloudflare
     restart: unless-stopped
 
 volumes:
