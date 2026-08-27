@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">ServerDock</title>
+  <desc id="description">Two modular docking forms surrounding a central control core.</desc>
+
+  <defs>
+    <radialGradient id="background" cx="50%" cy="43%" r="76%">
+      <stop offset="0" stop-color="#10264b" />
+      <stop offset="0.56" stop-color="#09162f" />
+      <stop offset="1" stop-color="#040914" />
+    </radialGradient>
+
+    <linearGradient id="blue" x1="30%" y1="8%" x2="72%" y2="96%">
+      <stop offset="0" stop-color="#55a8ff" />
+      <stop offset="0.16" stop-color="#2d78ff" />
+      <stop offset="0.57" stop-color="#1553f4" />
+      <stop offset="1" stop-color="#0823b5" />
+    </linearGradient>
+
+    <linearGradient id="white" x1="35%" y1="8%" x2="68%" y2="100%">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="0.56" stop-color="#f7f8fb" />
+      <stop offset="1" stop-color="#cfd7e5" />
+    </linearGradient>
+
+    <linearGradient id="core" x1="24%" y1="10%" x2="74%" y2="92%">
+      <stop offset="0" stop-color="#9bfcff" />
+      <stop offset="0.45" stop-color="#51eaf6" />
+      <stop offset="1" stop-color="#18b9d1" />
+    </linearGradient>
+
+    <linearGradient id="blueEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.42" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+
+    <filter id="tileShadow" x="-12%" y="-12%" width="124%" height="132%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#00040d" flood-opacity="0.68" />
+    </filter>
+
+    <filter id="blueShadow" x="-24%" y="-20%" width="156%" height="162%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="17" flood-color="#020719" flood-opacity="0.75" />
+      <feDropShadow dx="-3" dy="8" stdDeviation="8" flood-color="#0626a6" flood-opacity="0.42" />
+    </filter>
+
+    <filter id="whiteShadow" x="-24%" y="-20%" width="156%" height="162%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="17" flood-color="#020719" flood-opacity="0.72" />
+      <feDropShadow dx="3" dy="7" stdDeviation="7" flood-color="#8aa0c7" flood-opacity="0.24" />
+    </filter>
+
+    <filter id="coreShadow" x="-55%" y="-55%" width="210%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="15" flood-color="#3be9ff" flood-opacity="0.42" />
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#010816" flood-opacity="0.78" />
+    </filter>
+
+    <clipPath id="tileClip">
+      <rect x="12" y="12" width="1000" height="1000" rx="180" />
+    </clipPath>
+  </defs>
+
+  <g filter="url(#tileShadow)">
+    <rect x="12" y="12" width="1000" height="1000" rx="180" fill="url(#background)" />
+  </g>
+
+  <g clip-path="url(#tileClip)">
+    <circle cx="512" cy="463" r="356" fill="#214a91" opacity="0.08" />
+
+    <path
+      d="M354 196H602C629 196 646 214 646 241V270C646 288 640 300 628 312L561 378C551 388 539 393 524 393H454C416 393 387 423 387 461V536C387 555 394 570 407 584L415 592C427 605 427 620 414 633L344 703C328 719 309 725 286 725C240 725 207 691 207 645V329C207 254 268 196 354 196Z"
+      fill="url(#blue)"
+      filter="url(#blueShadow)"
+    />
+
+    <path
+      d="M719 288C773 288 817 332 817 387V657C817 744 746 814 659 814H430C399 814 378 792 378 762V735C378 720 384 706 395 695L456 633C466 623 478 618 492 618H566C597 618 620 594 620 563V493C620 476 614 462 602 451C589 438 590 417 604 403L675 331C688 318 701 288 719 288Z"
+      fill="url(#white)"
+      filter="url(#whiteShadow)"
+    />
+
+    <rect
+      x="434"
+      y="433"
+      width="156"
+      height="160"
+      rx="38"
+      fill="url(#core)"
+      filter="url(#coreShadow)"
+    />
+
+    <path
+      d="M354 202H598C619 202 633 214 638 231"
+      fill="none"
+      stroke="url(#blueEdge)"
+      stroke-width="6"
+      stroke-linecap="round"
+      opacity="0.72"
+    />
+
+    <path
+      d="M687 329L709 307C719 297 730 294 744 296"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="6"
+      stroke-linecap="round"
+      opacity="0.48"
+    />
+
+    <rect
+      x="441"
+      y="440"
+      width="142"
+      height="145"
+      rx="32"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="4"
+      opacity="0.34"
+    />
+  </g>
+</svg>

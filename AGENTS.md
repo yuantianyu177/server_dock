@@ -10,7 +10,8 @@ In `frontend/src/`, route screens belong in `views/`, shared UI in `components/`
 
 Run `mise install` for pinned Go, Node, and npm versions. If mise is not activated, prefix tool commands with `mise exec --`.
 
-- `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`: run the development stack (`:3000` and `:8000`).
+- `./scripts/deploy.sh <hostname-or-ip>`: generate secrets and a TLS certificate, then deploy the production stack.
+- `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`: run the HTTPS development frontend (`:3000`) and backend (`:8000`).
 - `cd backend && mise exec -- go run ./cmd/server`: run the API.
 - `cd backend && mise exec -- go test ./...`: run all backend tests.
 - `cd frontend && mise exec -- npm ci`: install locked frontend dependencies.

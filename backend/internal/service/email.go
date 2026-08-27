@@ -78,12 +78,12 @@ var approvalEmail = template.Must(template.New("approval").Parse(emailStart + `
 <h1 style="margin:0;color:#1d1d1f;font-size:26px;line-height:1.25;letter-spacing:-.02em;">容器已创建</h1>
 <p style="margin:12px 0 24px;color:#6e6e73;font-size:14px;line-height:1.7;">{{.ApplicantName}}，你的容器申请已通过审核。请使用以下信息连接容器。</p>
 <div style="overflow:hidden;border:1px solid #d2d2d7;border-radius:12px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
-    <tr><td style="width:116px;padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">服务器</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;">{{.Server}}</td></tr>
-    <tr><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">用户</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;">root</td></tr>
-    <tr><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">密码</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;word-break:break-all;">{{.Password}}</td></tr>
-    <tr><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">SSH 端口</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;">{{.SSHPort}}</td></tr>
-    <tr><td style="padding:12px 16px;color:#6e6e73;font-size:12px;">额外端口</td><td style="padding:12px 16px;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;">{{.ExtraPorts}}</td></tr>
+	  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border-collapse:collapse;">
+	    <tr><td width="76" style="width:76px;padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">服务器</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.Server}}</td></tr>
+	    <tr><td style="padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">用户</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;overflow-wrap:anywhere;">root</td></tr>
+	    <tr><td style="padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">密码</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;word-break:break-all;">{{.Password}}</td></tr>
+	    <tr><td style="padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">SSH 端口</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.SSHPort}}</td></tr>
+	    <tr><td style="padding:12px;color:#6e6e73;font-size:12px;white-space:nowrap;">额外端口</td><td style="padding:12px 14px;color:#1d1d1f;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.ExtraPorts}}</td></tr>
   </table>
 </div>
 <p style="margin:12px 0 0;color:#8a5b00;font-size:12px;line-height:1.6;">连接密码仅在此邮件中提供，请妥善保管。</p>
@@ -95,9 +95,9 @@ var rejectionEmail = template.Must(template.New("rejection").Parse(emailStart + 
 <h1 style="margin:0;color:#1d1d1f;font-size:26px;line-height:1.25;letter-spacing:-.02em;">容器申请未通过</h1>
 <p style="margin:12px 0 24px;color:#6e6e73;font-size:14px;line-height:1.7;">{{.ApplicantName}}，本次容器申请未能通过审核。</p>
 <div style="overflow:hidden;border:1px solid #d2d2d7;border-radius:12px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
-    <tr><td style="width:116px;padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">服务器</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;">{{.Server}}</td></tr>
-    <tr><td style="padding:12px 16px;color:#6e6e73;font-size:12px;">镜像</td><td style="padding:12px 16px;color:#1d1d1f;font-size:13px;font-weight:600;">{{.Image}}</td></tr>
+	  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border-collapse:collapse;">
+	    <tr><td width="76" style="width:76px;padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">服务器</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.Server}}</td></tr>
+	    <tr><td style="padding:12px;color:#6e6e73;font-size:12px;white-space:nowrap;">镜像</td><td style="padding:12px 14px;color:#1d1d1f;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.Image}}</td></tr>
   </table>
 </div>` + emailEnd))
 
@@ -106,11 +106,11 @@ var newApplicationEmail = template.Must(template.New("new").Parse(emailStart + `
 <h1 style="margin:0;color:#1d1d1f;font-size:26px;line-height:1.25;letter-spacing:-.02em;">收到新的容器申请</h1>
 <p style="margin:12px 0 24px;color:#6e6e73;font-size:14px;line-height:1.7;">一份新的容器申请正在等待审核。</p>
 <div style="overflow:hidden;border:1px solid #d2d2d7;border-radius:12px;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
-    <tr><td style="width:116px;padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">申请人</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;">{{.ApplicantName}}</td></tr>
-    <tr><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">邮箱</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;font-size:13px;font-weight:600;"><a href="mailto:{{.Email}}" style="color:#0066cc;text-decoration:none;">{{.Email}}</a></td></tr>
-    <tr><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;">服务器</td><td style="padding:12px 16px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;">{{.Server}}</td></tr>
-    <tr><td style="padding:12px 16px;color:#6e6e73;font-size:12px;">镜像</td><td style="padding:12px 16px;color:#1d1d1f;font-size:13px;font-weight:600;">{{.Image}}</td></tr>
+	  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border-collapse:collapse;">
+	    <tr><td width="76" style="width:76px;padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">申请人</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.ApplicantName}}</td></tr>
+	    <tr><td style="padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">邮箱</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;font-size:13px;font-weight:600;overflow-wrap:anywhere;"><a href="mailto:{{.Email}}" style="color:#0066cc;text-decoration:none;">{{.Email}}</a></td></tr>
+	    <tr><td style="padding:12px;border-bottom:1px solid #e8e8ed;color:#6e6e73;font-size:12px;white-space:nowrap;">服务器</td><td style="padding:12px 14px;border-bottom:1px solid #e8e8ed;color:#1d1d1f;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.Server}}</td></tr>
+	    <tr><td style="padding:12px;color:#6e6e73;font-size:12px;white-space:nowrap;">镜像</td><td style="padding:12px 14px;color:#1d1d1f;font-size:13px;font-weight:600;overflow-wrap:anywhere;">{{.Image}}</td></tr>
   </table>
 </div>
 {{if .Actions.ApproveURL}}

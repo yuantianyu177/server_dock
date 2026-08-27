@@ -99,8 +99,12 @@ func (s *ApplicationService) Approve(id uint) (*dto.ApplicationResponse, error) 
 	portStart, _ := strconv.Atoi(config["port_range_start"])
 	portEnd, _ := strconv.Atoi(config["port_range_end"])
 	extraPortCount, _ := strconv.Atoi(config["extra_ports_per_container"])
+	containerName, err := buildApplicationContainerName(application.ApplicantName, s.now())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrContainerProvisioning, err)
+	}
 	result, err := s.containerService.CreateContainer(
-		application.ServerID, fmt.Sprintf("container-%d", application.ID), imageAddress,
+		application.ServerID, containerName, imageAddress,
 		config["docker_extra_args"], portStart, portEnd, extraPortCount, config["default_volume_mount_path"],
 	)
 	if err != nil {

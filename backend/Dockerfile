@@ -15,7 +15,7 @@ RUN CGO_ENABLED=1 go build -o serverdock ./cmd/server/
 # Runtime stage
 FROM alpine:3.24.1
 
-RUN apk add --no-cache ca-certificates sqlite-libs
+RUN apk add --no-cache ca-certificates sqlite-libs tzdata
 
 WORKDIR /app
 COPY --from=builder /app/serverdock .

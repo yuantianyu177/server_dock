@@ -175,7 +175,6 @@ onMounted(loadServers)
                 <h2 id="application-title">等待管理员审核</h2>
               </div>
             </div>
-            <p class="success-email">审批结果会发送到 <strong>{{ submittedApplication.applicant_email || form.applicant_email }}</strong></p>
 
             <dl class="submission-summary" aria-label="本次申请内容">
               <div>
@@ -190,7 +189,7 @@ onMounted(loadServers)
 
             <div class="success-note">
               <Mail :size="17" aria-hidden="true" />
-              <span>管理员审核并创建容器后，连接信息会发送到同一邮箱。</span>
+              <span>管理员审核并创建容器后，连接信息会发送到 <strong>{{ submittedApplication.applicant_email || form.applicant_email }}</strong></span>
             </div>
 
             <button class="btn btn-primary" type="button" @click="resetApplication">再申请一个容器</button>
@@ -524,18 +523,6 @@ legend {
   color: var(--success);
 }
 
-.success-email {
-  margin-top: 24px;
-  color: var(--ink-secondary);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.success-email strong {
-  color: var(--ink);
-  font-weight: 650;
-}
-
 .submission-summary {
   margin: 23px 0 0;
   border-top: 1px solid var(--divider-subtle);
@@ -583,9 +570,16 @@ legend {
 }
 
 .success-note > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ink-secondary);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.success-note strong {
+  color: var(--ink);
+  font-weight: 650;
 }
 
 .success-state .btn {

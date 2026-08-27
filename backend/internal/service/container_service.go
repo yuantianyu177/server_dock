@@ -117,8 +117,8 @@ func (s *ContainerService) CreateContainer(serverID uint, name, image, extraArgs
 		return nil, err
 	}
 
-	// Docker creates a named volume referenced by -v, avoiding another SSH round trip.
-	volumeName := name + "-data"
+	// Docker creates a same-named volume referenced by -v, avoiding another SSH round trip.
+	volumeName := name
 	password := rand.Text()
 	command := buildDockerRunCommand(name, image, ports[0], ports[1:], volumeName, mountPath, extraArgs)
 	output, err := execute(command)

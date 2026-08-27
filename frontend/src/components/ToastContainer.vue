@@ -46,7 +46,7 @@ const icons = { success: CircleCheck, error: CircleAlert, warning: TriangleAlert
   min-height: 48px;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) 28px;
-  align-items: start;
+  align-items: center;
   gap: 9px;
   padding: 9px 9px 9px 13px;
   border: 1px solid var(--divider);
@@ -58,7 +58,6 @@ const icons = { success: CircleCheck, error: CircleAlert, warning: TriangleAlert
 }
 
 .toast-icon {
-  margin-top: 1px;
   color: var(--blue);
 }
 
@@ -78,7 +77,6 @@ const icons = { success: CircleCheck, error: CircleAlert, warning: TriangleAlert
   width: 28px;
   height: 28px;
   display: grid;
-  align-self: start;
   place-items: center;
   border-radius: 7px;
   background: transparent;

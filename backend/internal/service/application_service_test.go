@@ -289,6 +289,8 @@ func TestApplicationServiceIgnoreDoesNotSendEmail(t *testing.T) {
 
 func TestApplicationServiceApprove(t *testing.T) {
 	service, email, ssh := setupAppService(t)
+	approvalTime := time.Date(2026, time.August, 28, 0, 1, 2, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return approvalTime }
 	var runCommand string
 	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
 		if strings.HasPrefix(command, "docker run ") {
@@ -300,6 +302,9 @@ func TestApplicationServiceApprove(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := submitTestApplication(t, service)
+	if err := service.db.Model(&model.Application{}).Where("id = ?", application.ID).Update("applicant_name", "张三").Error; err != nil {
+		t.Fatal(err)
+	}
 
 	response, err := service.Approve(application.ID)
 	if err != nil {
@@ -325,10 +330,20 @@ func TestApplicationServiceApprove(t *testing.T) {
 	if strings.ContainsAny(runCommand, "\r\n") {
 		t.Fatalf("docker command should be one line: %q", runCommand)
 	}
-	for _, value := range []string{"--gpus all", "--shm-size=8g", "nvidia/cuda:12.0"} {
+	containerName := "zhangsan-2026-08-28-00-01-02"
+	for _, value := range []string{
+		"--name " + containerName,
+		"-v " + containerName + ":/data",
+		"--gpus all",
+		"--shm-size=8g",
+		"nvidia/cuda:12.0",
+	} {
 		if !strings.Contains(runCommand, value) {
 			t.Fatalf("docker command does not contain %q: %s", value, runCommand)
 		}
+	}
+	if strings.Contains(runCommand, containerName+"-data") {
+		t.Fatalf("volume should use the container name without a suffix: %s", runCommand)
 	}
 }
 

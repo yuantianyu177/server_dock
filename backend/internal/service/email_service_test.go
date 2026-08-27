@@ -79,6 +79,8 @@ func TestEmailTemplatesShareServerDockVisualSystem(t *testing.T) {
 		`background-color:#f5f5f7`,
 		`background-color:#0071e3`,
 		`border-radius:16px`,
+		`table-layout:fixed`,
+		`width="76"`,
 		`基础设施控制台`,
 		`此邮件由 ServerDock 自动发送`,
 	}
@@ -87,6 +89,9 @@ func TestEmailTemplatesShareServerDockVisualSystem(t *testing.T) {
 			if !strings.Contains(html, check) {
 				t.Errorf("%s email does not contain shared design marker %q", name, check)
 			}
+		}
+		if strings.Contains(html, `width:116px`) {
+			t.Errorf("%s email still uses the oversized label column", name)
 		}
 	}
 }
