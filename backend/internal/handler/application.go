@@ -74,10 +74,16 @@ func (h *ApplicationHandler) Action(c *gin.Context) {
 
 	var response *dto.ApplicationResponse
 	var err error
-	if request.Action == "approve" {
-		response, err = h.service.Approve(id, request.AdminNotes)
-	} else {
-		response, err = h.service.Reject(id, request.AdminNotes)
+	switch request.Action {
+	case "approve":
+		response, err = h.service.Approve(id)
+	case "reject":
+		response, err = h.service.Reject(id)
+	case "ignore":
+		response, err = h.service.Ignore(id)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid application action"})
+		return
 	}
 	if err == nil {
 		c.JSON(http.StatusOK, response)

@@ -1,92 +1,94 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  Box,
+  CircleAlert,
+  CircleCheck,
+  KeyRound,
+  Mail,
+  Network,
+  RefreshCw,
+  Save,
+  Send,
+  ShieldCheck
+} from '@lucide/vue'
 import { get, post, put } from '@/api/client'
 import { useToast } from '@/composables/useToast'
+import PageHeader from '@/components/PageHeader.vue'
+import StatePanel from '@/components/StatePanel.vue'
 
 const toast = useToast()
 const config = ref({})
 const loading = ref(true)
+const loadError = ref('')
 const saving = ref(false)
 const testEmailLoading = ref(false)
 const activeSection = ref('ports')
 const dirty = ref(false)
 
-const pwForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
-const pwLoading = ref(false)
-const pwError = ref('')
-const pwSuccess = ref(false)
+const passwordForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
+const passwordLoading = ref(false)
+const passwordError = ref('')
+const passwordSuccess = ref(false)
 
 const sections = [
   {
     id: 'ports',
-    title: 'Port Allocation',
-    description: 'Define the range of host ports available for container mapping.',
-    keys: [
-      { key: 'port_range_start', label: 'Range Start', type: 'number', hint: 'First port in the allocation range' },
-      { key: 'port_range_end', label: 'Range End', type: 'number', hint: 'Last port in the allocation range' },
-      { key: 'extra_ports_per_container', label: 'Extra Ports', type: 'number', hint: 'Additional ports mapped per container' }
+    title: '端口分配',
+    description: '定义新容器可使用的宿主机端口范围。',
+    icon: Network,
+    fields: [
+      { key: 'port_range_start', label: '起始端口', type: 'number', hint: '自动分配范围中的第一个端口' },
+      { key: 'port_range_end', label: '结束端口', type: 'number', hint: '自动分配范围中的最后一个端口' },
+      { key: 'extra_ports_per_container', label: '额外端口数', type: 'number', hint: '除 SSH 端口外，为每个容器额外映射的端口数量' }
     ]
   },
   {
     id: 'containers',
-    title: 'Container Defaults',
-    description: 'Default settings applied when creating new containers.',
-    keys: [
-      { key: 'default_volume_mount_path', label: 'Volume Mount Path', type: 'text', hint: 'e.g. /data' },
-      { key: 'docker_extra_args', label: 'Extra Docker Args', type: 'textarea', hint: 'One argument per line, e.g. --gpus all' }
+    title: '容器默认值',
+    description: '创建容器时自动应用的存储路径和 Docker 参数。',
+    icon: Box,
+    fields: [
+      { key: 'default_volume_mount_path', label: '数据卷挂载路径', type: 'text', hint: '例如 /data' },
+      { key: 'docker_extra_args', label: '额外 Docker 参数', type: 'textarea', hint: '例如 --gpus all；保存时会合并空白字符' }
     ]
   },
   {
     id: 'email',
-    title: 'Email Notifications',
-    description: 'Configure SMTP to send applicants status updates and container credentials.',
-    keys: [
-      { key: 'email_enabled', label: 'Enable Email', type: 'boolean', hint: 'Send email notifications for applications' },
-      { key: 'admin_email', label: 'Admin Email', type: 'text', hint: 'Receives new application notifications' },
-      { key: 'smtp_host', label: 'SMTP Host', type: 'text', hint: '' },
-      { key: 'smtp_port', label: 'SMTP Port', type: 'number', hint: '' },
-      { key: 'smtp_username', label: 'Username', type: 'text', hint: '' },
-      { key: 'smtp_password', label: 'Password', type: 'password', hint: '' },
-      { key: 'smtp_use_tls', label: 'Use TLS', type: 'boolean', hint: '' }
+    title: '邮件通知',
+    description: '向管理员发送带快捷审批按钮的新申请通知，并向申请人发送审批结果和连接信息。',
+    icon: Mail,
+    fields: [
+      { key: 'email_enabled', label: '启用邮件通知', type: 'boolean', hint: '关闭后不发送申请与审批邮件' },
+      { key: 'admin_email', label: '管理员邮箱', type: 'email', hint: '接收新容器申请通知' },
+      { key: 'public_url', label: '公开访问地址', type: 'url', hint: '邮件审批按钮的访问地址，例如 https://serverdock.example.com' },
+      { key: 'smtp_host', label: 'SMTP 主机', type: 'text', hint: '例如 smtp.example.com' },
+      { key: 'smtp_port', label: 'SMTP 端口', type: 'number', hint: '常用端口为 465 或 587' },
+      { key: 'smtp_username', label: 'SMTP 用户名', type: 'text', hint: '用于登录 SMTP 服务' },
+      { key: 'smtp_password', label: 'SMTP 密码', type: 'password', hint: '用于登录 SMTP 服务' },
+      { key: 'smtp_use_tls', label: '使用 TLS', type: 'boolean', hint: '通过加密连接发送邮件' }
     ]
   },
   {
     id: 'security',
-    title: 'Security',
-    description: 'Manage admin account credentials.',
-    keys: []
+    title: '账户安全',
+    description: '更新当前管理员账户的登录密码。',
+    icon: ShieldCheck,
+    fields: []
   }
 ]
 
-const navItems = [
-  {
-    id: 'ports',
-    label: 'Port Allocation',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>'
-  },
-  {
-    id: 'containers',
-    label: 'Container Defaults',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'
-  },
-  {
-    id: 'email',
-    label: 'Email',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>'
-  },
-  {
-    id: 'security',
-    label: 'Security',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'
-  }
-]
+const configKeys = sections.flatMap(section => section.fields.map(field => field.key))
 
 async function loadConfig() {
   loading.value = true
+  loadError.value = ''
   try {
     config.value = await get('/config') || {}
-  } catch (e) {
-    toast.error(e.message)
+    dirty.value = false
+  } catch (error) {
+    config.value = {}
+    loadError.value = error.message
   } finally {
     loading.value = false
   }
@@ -99,17 +101,15 @@ function markDirty() {
 async function saveAll() {
   saving.value = true
   try {
-    const keys = sections.flatMap(s => s.keys.map(k => k.key))
-    for (const key of keys) {
-      const val = config.value[key]
-      if (val !== undefined && val !== null) {
-        await put(`/config/${key}`, { value: String(val) })
+    for (const key of configKeys) {
+      if (config.value[key] !== undefined && config.value[key] !== null) {
+        await put(`/config/${key}`, { value: String(config.value[key]) })
       }
     }
     dirty.value = false
-    toast.success('All settings saved')
-  } catch (e) {
-    toast.error(e.message)
+    toast.success('已保存系统设置')
+  } catch (error) {
+    toast.error(`无法保存系统设置：${error.message}`)
   } finally {
     saving.value = false
   }
@@ -119,505 +119,451 @@ async function testEmail() {
   testEmailLoading.value = true
   try {
     await post('/config/test-email')
-    toast.success('Test email sent successfully.')
-  } catch (e) {
-    toast.error(e.message)
+    toast.success('测试邮件已发送，请检查收件箱')
+  } catch (error) {
+    toast.error(`无法发送测试邮件：${error.message}`)
   } finally {
     testEmailLoading.value = false
   }
 }
 
 async function changePassword() {
-  pwError.value = ''
-  pwSuccess.value = false
-  if (pwForm.value.newPassword !== pwForm.value.confirm) {
-    pwError.value = 'New passwords do not match.'
+  passwordError.value = ''
+  passwordSuccess.value = false
+  if (!passwordForm.value.oldPassword) {
+    passwordError.value = '请输入当前密码。'
     return
   }
-  pwLoading.value = true
+  if (passwordForm.value.newPassword.length < 6) {
+    passwordError.value = '新密码至少需要 6 个字符。'
+    return
+  }
+  if (passwordForm.value.newPassword !== passwordForm.value.confirm) {
+    passwordError.value = '两次输入的新密码不一致。'
+    return
+  }
+
+  passwordLoading.value = true
   try {
     await post('/auth/change-password', {
-      old_password: pwForm.value.oldPassword,
-      new_password: pwForm.value.newPassword
+      old_password: passwordForm.value.oldPassword,
+      new_password: passwordForm.value.newPassword
     })
-    pwForm.value = { oldPassword: '', newPassword: '', confirm: '' }
-    pwSuccess.value = true
-    setTimeout(() => { pwSuccess.value = false }, 4000)
-  } catch (e) {
-    pwError.value = e.message
+    passwordForm.value = { oldPassword: '', newPassword: '', confirm: '' }
+    passwordSuccess.value = true
+    toast.success('管理员密码已更新')
+  } catch (error) {
+    passwordError.value = `无法更新密码：${error.message}`
   } finally {
-    pwLoading.value = false
+    passwordLoading.value = false
   }
 }
 
 function scrollToSection(id) {
   activeSection.value = id
-  document.getElementById('section-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  document.getElementById(`settings-${id}`)?.scrollIntoView({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block: 'start'
+  })
 }
 
-onMounted(loadConfig)
+function beforeUnload(event) {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => {
+  loadConfig()
+  window.addEventListener('beforeunload', beforeUnload)
+})
+
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 </script>
 
 <template>
   <div class="config-page">
-    <!-- Page header -->
-    <div class="page-header animate-in">
-      <div class="page-header-left">
-        <h1 class="page-title">Settings</h1>
-        <p class="page-subtitle">Manage system configuration and account settings</p>
-      </div>
-      <div class="header-right">
-        <button class="btn btn-primary btn-w-action" @click="saveAll" :disabled="saving || !dirty">
-          <span v-if="saving" class="spinner" style="width:13px;height:13px;border-color:rgba(255,255,255,0.3);border-top-color:white" />
-          Save Settings
+    <PageHeader title="系统设置" description="配置端口、容器默认值、邮件通知和管理员账户。">
+      <template #actions>
+        <span v-if="dirty" class="unsaved-indicator" role="status"><span />有未保存更改</span>
+        <button class="btn btn-primary" type="button" :disabled="saving || !dirty" @click="saveAll">
+          <span v-if="saving" class="spinner button-spinner" aria-hidden="true" />
+          <Save v-else :size="15" aria-hidden="true" />
+          {{ saving ? '正在保存…' : '保存设置' }}
         </button>
-      </div>
+      </template>
+    </PageHeader>
+
+    <div v-if="loading" class="config-loading" role="status"><span class="spinner" /><span>正在读取系统设置…</span></div>
+    <div v-else-if="loadError" class="surface">
+      <StatePanel tone="error" title="无法读取系统设置" :description="`${loadError}。请检查 API 服务后重试。`">
+        <template #icon><CircleAlert :size="20" /></template>
+        <template #actions><button class="btn btn-secondary btn-sm" type="button" @click="loadConfig"><RefreshCw :size="14" />重新加载</button></template>
+      </StatePanel>
     </div>
 
-    <div v-if="loading" class="loading-overlay" style="margin-top:80px">
-      <span class="spinner" style="width:26px;height:26px" />
-    </div>
-
-    <div v-else class="config-body animate-in animate-in-delay-1">
-      <!-- Left nav -->
-      <nav class="settings-nav">
+    <div v-else class="config-layout">
+      <nav class="settings-nav" aria-label="设置类别">
         <button
-          v-for="item in navItems"
-          :key="item.id"
+          v-for="section in sections"
+          :key="section.id"
           class="settings-nav-item"
-          :class="{ active: activeSection === item.id }"
-          @click="scrollToSection(item.id)"
+          :class="{ active: activeSection === section.id }"
+          :aria-pressed="activeSection === section.id"
+          type="button"
+          @click="scrollToSection(section.id)"
         >
-          <span class="nav-icon" v-html="item.icon"></span>
-          <span class="nav-label">{{ item.label }}</span>
-          <span class="nav-active-bar"></span>
+          <component :is="section.icon" :size="17" :stroke-width="1.8" aria-hidden="true" />
+          <span>{{ section.title }}</span>
         </button>
       </nav>
 
-      <!-- Content -->
       <div class="settings-content">
-        <div
-          v-for="(section, si) in sections"
+        <section
+          v-for="section in sections"
+          :id="`settings-${section.id}`"
           :key="section.id"
-          :id="'section-' + section.id"
           class="settings-section"
+          :aria-labelledby="`settings-title-${section.id}`"
         >
-          <div class="section-header">
-            <div class="section-header-inner">
-              <span class="section-index">0{{ si + 1 }}</span>
-              <div>
-                <h2 class="section-title">{{ section.title }}</h2>
-                <p class="section-desc">{{ section.description }}</p>
-              </div>
+          <header class="settings-heading">
+            <div class="settings-heading-icon" aria-hidden="true"><component :is="section.icon" :size="18" :stroke-width="1.8" /></div>
+            <div>
+              <h2 :id="`settings-title-${section.id}`">{{ section.title }}</h2>
+              <p>{{ section.description }}</p>
             </div>
-          </div>
+          </header>
 
           <div class="settings-panel">
-            <!-- Regular config fields -->
-            <div
-              v-for="(field, i) in section.keys"
-              :key="field.key"
-              class="field-row"
-              :class="{ 'field-row-last': i === section.keys.length - 1 && section.id !== 'email' }"
-            >
-              <div class="field-meta">
-                <div class="field-label">{{ field.label }}</div>
-                <div v-if="field.hint" class="field-hint">{{ field.hint }}</div>
+            <div v-for="field in section.fields" :key="field.key" class="setting-row">
+              <div class="setting-copy">
+                <label class="setting-label" :for="`config-${field.key}`">{{ field.label }}</label>
+                <p v-if="field.hint" class="setting-hint">{{ field.hint }}</p>
               </div>
-              <div class="field-control">
-                <!-- Boolean toggle -->
-                <template v-if="field.type === 'boolean'">
-                  <label class="toggle">
-                    <input
-                      type="checkbox"
-                      :checked="config[field.key] === 'true'"
-                      @change="e => { config[field.key] = e.target.checked ? 'true' : 'false'; markDirty() }"
-                      class="toggle-input"
-                    />
-                    <span class="toggle-track"><span class="toggle-thumb" /></span>
-                  </label>
-                </template>
-                <!-- Textarea -->
-                <template v-else-if="field.type === 'textarea'">
-                  <textarea v-model="config[field.key]" class="form-textarea cfg-textarea" @input="markDirty" />
-                </template>
-                <!-- Text / number / password -->
-                <template v-else>
+              <div class="setting-control">
+                <label v-if="field.type === 'boolean'" class="switch" :aria-label="field.label">
                   <input
-                    v-model="config[field.key]"
-                    :type="field.type"
-                    class="form-input cfg-input"
-                    @input="markDirty"
+                    :id="`config-${field.key}`"
+                    type="checkbox"
+                    :checked="config[field.key] === 'true'"
+                    @change="event => { config[field.key] = event.target.checked ? 'true' : 'false'; markDirty() }"
                   />
-                </template>
+                  <span class="switch-track" />
+                </label>
+                <textarea
+                  v-else-if="field.type === 'textarea'"
+                  :id="`config-${field.key}`"
+                  v-model="config[field.key]"
+                  class="form-textarea config-textarea mono"
+                  @input="markDirty"
+                />
+                <input
+                  v-else
+                  :id="`config-${field.key}`"
+                  v-model="config[field.key]"
+                  :type="field.type"
+                  class="form-input config-input"
+                  :class="{ mono: field.type === 'number' || field.key === 'smtp_host' }"
+                  :autocomplete="field.type === 'password' ? 'new-password' : 'off'"
+                  @input="markDirty"
+                />
               </div>
             </div>
 
-            <!-- Email test row -->
-            <div v-if="section.id === 'email'" class="field-row field-row-last field-row-action">
-              <div class="field-meta">
-                <div class="field-label">Test Connection</div>
-                <div class="field-hint">Send a test email using the current SMTP settings</div>
+            <div v-if="section.id === 'email'" class="setting-row setting-action-row">
+              <div class="setting-copy">
+                <span class="setting-label">测试邮件</span>
+                <p class="setting-hint">使用已保存的 SMTP 设置向管理员邮箱发送测试邮件。</p>
               </div>
-              <div class="field-control">
-                <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-                  <button class="btn btn-secondary btn-sm" @click="testEmail" :disabled="testEmailLoading">
-                    <span v-if="testEmailLoading" class="spinner" style="width:12px;height:12px" />
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.5a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.62 2.74h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 10.34a16 16 0 0 0 6 6l.87-.87a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2.02z"/></svg>
-                    Send Test Email
-                  </button>
-                </div>
+              <div class="setting-control test-control">
+                <button class="btn btn-secondary btn-sm" type="button" :disabled="testEmailLoading || dirty" @click="testEmail">
+                  <span v-if="testEmailLoading" class="spinner small-spinner" />
+                  <Send v-else :size="14" aria-hidden="true" />
+                  {{ testEmailLoading ? '正在发送…' : '发送测试邮件' }}
+                </button>
+                <span v-if="dirty" class="test-hint">请先保存上方更改。</span>
               </div>
             </div>
 
-            <!-- Security: password change -->
             <template v-if="section.id === 'security'">
-              <Transition name="fade">
-                <div v-if="pwError" class="alert alert-error pw-alert">{{ pwError }}</div>
-              </Transition>
-              <Transition name="fade">
-                <div v-if="pwSuccess" class="alert alert-success pw-alert">Password changed successfully.</div>
-              </Transition>
-              <div class="field-row">
-                <div class="field-meta">
-                  <div class="field-label">Current Password</div>
-                </div>
-                <div class="field-control">
-                  <input v-model="pwForm.oldPassword" type="password" class="form-input cfg-input" placeholder="••••••••" />
-                </div>
+              <div v-if="passwordError" class="password-alert alert alert-error" role="alert"><CircleAlert :size="17" />{{ passwordError }}</div>
+              <div v-if="passwordSuccess" class="password-alert alert alert-success" role="status"><CircleCheck :size="17" />密码已更新。</div>
+
+              <div class="setting-row">
+                <div class="setting-copy"><label class="setting-label" for="current-password">当前密码</label></div>
+                <div class="setting-control"><input id="current-password" v-model="passwordForm.oldPassword" type="password" class="form-input config-input" autocomplete="current-password" /></div>
               </div>
-              <div class="field-row">
-                <div class="field-meta">
-                  <div class="field-label">New Password</div>
-                </div>
-                <div class="field-control">
-                  <input v-model="pwForm.newPassword" type="password" class="form-input cfg-input" placeholder="••••••••" />
-                </div>
+              <div class="setting-row">
+                <div class="setting-copy"><label class="setting-label" for="new-password">新密码</label><p class="setting-hint">至少 6 个字符。</p></div>
+                <div class="setting-control"><input id="new-password" v-model="passwordForm.newPassword" type="password" class="form-input config-input" autocomplete="new-password" /></div>
               </div>
-              <div class="field-row">
-                <div class="field-meta">
-                  <div class="field-label">Confirm Password</div>
-                </div>
-                <div class="field-control">
-                  <input v-model="pwForm.confirm" type="password" class="form-input cfg-input" placeholder="••••••••" @keyup.enter="changePassword" />
-                </div>
+              <div class="setting-row">
+                <div class="setting-copy"><label class="setting-label" for="confirm-password">再次输入新密码</label></div>
+                <div class="setting-control"><input id="confirm-password" v-model="passwordForm.confirm" type="password" class="form-input config-input" autocomplete="new-password" @keyup.enter="changePassword" /></div>
               </div>
-              <div class="field-row field-row-last field-row-action">
-                <div class="field-meta"></div>
-                <div class="field-control">
-                  <button class="btn btn-primary btn-sm" @click="changePassword" :disabled="pwLoading">
-                    <span v-if="pwLoading" class="spinner" style="width:12px;height:12px;border-color:rgba(255,255,255,0.3);border-top-color:white" />
-                    Update Password
+              <div class="setting-row setting-action-row">
+                <div class="setting-copy" />
+                <div class="setting-control">
+                  <button class="btn btn-secondary" type="button" :disabled="passwordLoading" @click="changePassword">
+                    <span v-if="passwordLoading" class="spinner small-spinner" />
+                    <KeyRound v-else :size="15" aria-hidden="true" />
+                    {{ passwordLoading ? '正在更新…' : '更新密码' }}
                   </button>
                 </div>
               </div>
             </template>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* -- Layout -- */
 .config-page {
   position: relative;
 }
 
-.page-header-left {
-  display: flex;
-  flex-direction: column;
+.unsaved-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.header-right {
+.unsaved-indicator > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.config-loading {
+  min-height: 360px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 10px;
+  color: var(--ink-secondary);
 }
 
-.config-body {
+.config-layout {
   display: grid;
-  grid-template-columns: 188px 1fr;
-  gap: 36px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 34px;
   align-items: start;
 }
 
-/* -- Left nav -- */
 .settings-nav {
   position: sticky;
   top: 24px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-  padding: 6px;
+  gap: 3px;
+  padding-right: 15px;
+  border-right: 1px solid var(--divider);
 }
 
 .settings-nav-item {
-  position: relative;
+  min-height: 38px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  text-align: left;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 450;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
+  gap: 9px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s;
-  background: none;
-  border: none;
-  overflow: hidden;
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
 }
 
 .settings-nav-item:hover {
-  color: var(--text-primary);
-  background: var(--cream);
+  background: #eeeef1;
+  color: var(--ink);
 }
 
 .settings-nav-item.active {
-  color: var(--accent);
-  background: var(--accent-light);
-  font-weight: 500;
+  background: var(--blue-soft);
+  color: #0059b5;
 }
 
-.nav-icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-}
-
-.settings-nav-item.active .nav-icon,
-.settings-nav-item:hover .nav-icon {
-  opacity: 1;
-}
-
-.nav-label {
-  flex: 1;
-}
-
-.nav-active-bar {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0);
-  width: 3px;
-  height: 60%;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
-  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
-}
-
-.settings-nav-item.active .nav-active-bar {
-  transform: translateY(-50%) scaleY(1);
-}
-
-/* -- Sections -- */
 .settings-content {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 44px;
+  gap: 38px;
 }
 
 .settings-section {
-  scroll-margin-top: 16px;
+  scroll-margin-top: 20px;
 }
 
-.section-header {
-  margin-bottom: 14px;
-}
-
-.section-header-inner {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.section-index {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-light);
-  border: 1px solid rgba(201, 100, 66, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 3px 7px;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-  margin-top: 3px;
-}
-
-.section-title {
-  font-family: var(--font-serif);
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-}
-
-.section-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 5px;
-  line-height: 1.5;
-}
-
-/* -- Panel -- */
-.settings-panel {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-/* -- Field rows -- */
-.field-row {
+.settings-heading {
   display: grid;
-  grid-template-columns: 210px 1fr;
-  gap: 20px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--border-light);
+  grid-template-columns: 36px 1fr;
+  align-items: start;
+  gap: 11px;
+  margin-bottom: 12px;
+}
+
+.settings-heading-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+}
+
+.settings-heading h2 {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.settings-heading p {
+  margin-top: 2px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.settings-panel {
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.setting-row {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: minmax(190px, 0.72fr) minmax(260px, 1fr);
   align-items: center;
-  transition: background 0.12s;
+  gap: 24px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--divider-subtle);
 }
 
-.field-row:hover {
-  background: var(--cream);
+.setting-row:last-child {
+  border-bottom: 0;
 }
 
-.field-row:first-child {
-  border-top: none;
+.setting-copy {
+  min-width: 0;
 }
 
-.field-row-last {
-  border-bottom: none;
-}
-
-.field-meta {
-  flex-shrink: 0;
-}
-
-.field-label {
+.setting-label {
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.field-hint {
-  font-size: 11.5px;
-  color: var(--text-muted);
+.setting-hint {
+  max-width: 390px;
   margin-top: 3px;
+  color: var(--ink-secondary);
+  font-size: 11px;
   line-height: 1.45;
 }
 
-.field-control {
+.setting-control {
+  min-width: 0;
   display: flex;
   align-items: center;
 }
 
-/* -- Inputs -- */
-.cfg-input {
-  max-width: 300px;
+.config-input,
+.config-textarea {
+  max-width: 390px;
 }
 
-.cfg-textarea {
-  min-height: 72px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
+.config-textarea {
+  min-height: 76px;
+  font-size: 12px;
 }
 
-
-/* -- Toggle -- */
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
+.setting-action-row {
+  background: #fafafa;
 }
 
-.toggle-input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
+.test-control {
+  flex-wrap: wrap;
+  gap: 9px;
 }
 
-.toggle-track {
-  position: relative;
-  width: 38px;
-  height: 22px;
-  background: var(--cream-border);
-  border-radius: 11px;
-  transition: background 0.2s;
-  display: block;
-  border: 1px solid var(--border);
+.test-hint {
+  color: var(--warning);
+  font-size: 11px;
 }
 
-.toggle-input:checked + .toggle-track {
-  background: var(--accent);
-  border-color: var(--accent);
+.password-alert {
+  margin: 14px 16px 0;
 }
 
-.toggle-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 14px;
-  height: 14px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
-  display: block;
+.button-spinner,
+.small-spinner {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
 }
 
-.toggle-input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(16px);
+.button-spinner {
+  color: #fff;
 }
 
-/* -- Password alerts -- */
-.pw-alert {
-  margin: 12px 20px 0;
-  border-radius: var(--radius-sm);
-}
-
-@media (max-width: 768px) {
-  .config-body {
+@media (max-width: 920px) {
+  .config-layout {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 22px;
   }
 
   .settings-nav {
     position: static;
     flex-direction: row;
+    gap: 4px;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 4px;
-    gap: 0;
+    padding: 0 0 9px;
+    border-right: 0;
+    border-bottom: 1px solid var(--divider);
+    scrollbar-width: none;
   }
 
-  .settings-nav-item {
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .nav-active-bar {
+  .settings-nav::-webkit-scrollbar {
     display: none;
   }
 
-  .field-row {
+  .settings-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 680px) {
+  .setting-row {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 9px;
+    padding: 14px 12px;
+  }
+
+  .config-input,
+  .config-textarea {
+    max-width: none;
+  }
+
+  .setting-action-row .setting-copy:empty {
+    display: none;
+  }
+
+  .unsaved-indicator {
+    width: 100%;
   }
 }
 </style>

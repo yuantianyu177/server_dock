@@ -100,11 +100,11 @@ func (h *ServerHandler) TestConnection(c *gin.Context) {
 	}
 
 	if err := h.serverService.TestConnection(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "connection failed: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "offline", "error": "connection failed: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "connected"})
+	c.JSON(http.StatusOK, gin.H{"status": "online"})
 }
 
 func (h *ServerHandler) TestConnectionDirect(c *gin.Context) {
@@ -115,9 +115,9 @@ func (h *ServerHandler) TestConnectionDirect(c *gin.Context) {
 	}
 
 	if err := h.serverService.TestConnectionDirect(req.Hostname, req.Port, req.User, req.AuthType, req.Credential); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "connection failed: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "offline", "error": "connection failed: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "connected"})
+	c.JSON(http.StatusOK, gin.H{"status": "online"})
 }

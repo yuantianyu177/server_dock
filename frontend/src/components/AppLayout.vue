@@ -1,60 +1,81 @@
 <script setup>
-import { ref, onMounted, provide, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import { Menu } from '@lucide/vue'
 import { useRoute } from 'vue-router'
 import { auth } from '@/stores/auth'
 import AppSidebar from './AppSidebar.vue'
+import BrandMark from './BrandMark.vue'
 
 const route = useRoute()
 const sidebarOpen = ref(false)
+const menuButtonRef = ref(null)
 
-provide('sidebarOpen', sidebarOpen)
-
-function closeSidebar() {
-  sidebarOpen.value = false
+async function openSidebar() {
+  sidebarOpen.value = true
+  await nextTick()
+  document.querySelector('.sidebar.open .sidebar-close')?.focus()
 }
 
-watch(() => route.path, () => {
+async function closeSidebar(restoreFocus = true) {
   sidebarOpen.value = false
-})
+  if (restoreFocus) {
+    await nextTick()
+    menuButtonRef.value?.focus()
+  }
+}
+
+function handleEscape() {
+  if (sidebarOpen.value) closeSidebar()
+}
+
+watch(() => route.path, () => closeSidebar(false))
 
 onMounted(async () => {
   if (auth.isAuthenticated && !auth.user) {
-    try { await auth.fetchMe() } catch {}
+    try {
+      await auth.fetchMe()
+    } catch {
+      // The API client handles expired sessions and redirects to login.
+    }
   }
 })
 </script>
 
 <template>
-  <div class="layout">
-    <!-- Mobile header -->
-    <header class="mobile-header">
-      <button class="mobile-menu-btn" @click="sidebarOpen = true">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
+  <div class="app-layout" @keydown.esc="handleEscape">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <header class="mobile-toolbar">
+      <button
+        ref="menuButtonRef"
+        class="mobile-menu"
+        type="button"
+        aria-label="打开主导航"
+        :aria-expanded="sidebarOpen"
+        @click="openSidebar"
+      >
+        <Menu :size="20" aria-hidden="true" />
       </button>
-      <div class="mobile-brand">
-        <div class="mobile-brand-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="2" width="20" height="8" rx="2"/>
-            <rect x="2" y="14" width="20" height="8" rx="2"/>
-            <line x1="6" y1="6" x2="6.01" y2="6"/>
-            <line x1="6" y1="18" x2="6.01" y2="18"/>
-          </svg>
-        </div>
-        <span class="mobile-brand-name">ServerDock</span>
-      </div>
-      <div style="width:36px" />
+      <router-link class="mobile-brand" to="/servers" aria-label="ServerDock 首页">
+        <BrandMark :size="28" />
+        <span>ServerDock</span>
+      </router-link>
+      <span class="toolbar-spacer" aria-hidden="true" />
     </header>
 
-    <!-- Sidebar overlay (mobile) -->
     <Transition name="overlay">
-      <div v-if="sidebarOpen" class="sidebar-overlay" @click="closeSidebar" />
+      <button
+        v-if="sidebarOpen"
+        class="sidebar-overlay"
+        type="button"
+        aria-label="关闭主导航"
+        @click="closeSidebar()"
+      />
     </Transition>
 
-    <AppSidebar :class="{ open: sidebarOpen }" />
+    <AppSidebar :class="{ open: sidebarOpen }" @close="closeSidebar()" />
 
-    <main class="main">
+    <main id="main-content" class="main-content" tabindex="-1">
       <div class="main-inner">
         <router-view v-slot="{ Component }">
           <Transition name="content" mode="out-in">
@@ -67,147 +88,148 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.layout {
-  display: flex;
+.app-layout {
   height: 100vh;
+  height: 100dvh;
+  display: flex;
   overflow: hidden;
+  background: var(--canvas);
 }
 
-.main {
+.main-content {
+  min-width: 0;
   flex: 1;
   overflow-y: auto;
-  background: var(--cream);
+  outline: none;
+  scroll-behavior: smooth;
 }
 
 .main-inner {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1384px;
   margin: 0 auto;
-  padding: 32px 36px;
+  padding: 30px 32px 48px;
 }
 
-/* Mobile header - hidden on desktop */
-.mobile-header {
-  display: none;
-}
-
-/* Sidebar overlay - hidden on desktop */
+.mobile-toolbar,
 .sidebar-overlay {
   display: none;
 }
 
-/* Content transition */
-:deep(.content-enter-active) {
-  transition: opacity 0.16s ease, transform 0.16s ease;
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 5000;
+  padding: 9px 12px;
+  border-radius: var(--radius-control);
+  background: var(--ink);
+  color: #fff;
+  transform: translateY(-150%);
+  transition: transform 160ms ease;
 }
-:deep(.content-leave-active) {
-  transition: opacity 0.1s ease;
+
+.skip-link:focus {
+  transform: translateY(0);
 }
-:deep(.content-enter-from) {
-  opacity: 0;
-  transform: translateY(8px);
+
+.content-enter-active,
+.content-leave-active {
+  transition: opacity 150ms ease;
 }
-:deep(.content-leave-to) {
+
+.content-enter-from,
+.content-leave-to {
   opacity: 0;
 }
 
-/* ── Mobile ── */
-@media (max-width: 768px) {
-  .layout {
+@media (max-width: 820px) {
+  .app-layout {
     flex-direction: column;
   }
 
-  .mobile-header {
-    display: flex;
+  .mobile-toolbar {
+    position: relative;
+    z-index: 80;
+    min-height: 52px;
+    display: grid;
+    grid-template-columns: 36px 1fr 36px;
     align-items: center;
-    justify-content: space-between;
-    height: 52px;
-    padding: 0 14px;
-    background: var(--sidebar-bg);
-    flex-shrink: 0;
-    z-index: 100;
+    padding: 0 10px;
+    border-bottom: 1px solid rgba(210, 210, 215, 0.78);
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
   }
 
-  .mobile-menu-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .mobile-menu {
     width: 36px;
     height: 36px;
-    border-radius: 8px;
-    background: none;
-    border: none;
-    color: var(--sidebar-text);
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--ink);
     cursor: pointer;
-    transition: background 0.15s;
   }
 
-  .mobile-menu-btn:hover {
-    background: var(--sidebar-hover);
+  .mobile-menu:hover {
+    background: #eeeef1;
   }
 
   .mobile-brand {
     display: flex;
     align-items: center;
-    gap: 8px;
-  }
-
-  .mobile-brand-icon {
-    width: 26px;
-    height: 26px;
-    background: var(--accent);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    color: white;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
   }
 
-  .mobile-brand-name {
-    font-family: var(--font-serif);
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    letter-spacing: 0.02em;
-  }
-
-  /* Sidebar becomes a drawer */
   :deep(.sidebar) {
     position: fixed;
-    left: 0;
     top: 0;
     bottom: 0;
+    left: 0;
     z-index: 200;
-    transform: translateX(-100%);
-    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: none;
+    transform: translateX(-102%);
+    transition: transform 240ms cubic-bezier(0.2, 0, 0, 1);
   }
 
   :deep(.sidebar.open) {
     transform: translateX(0);
-    box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+    box-shadow: var(--shadow-popover);
   }
 
   .sidebar-overlay {
-    display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.4);
     z-index: 150;
+    display: block;
+    background: rgba(0, 0, 0, 0.32);
+    cursor: default;
   }
 
-  .overlay-enter-active {
-    transition: opacity 0.2s ease;
+  .main-inner {
+    padding: 22px 18px 40px;
   }
+
+  .overlay-enter-active,
   .overlay-leave-active {
-    transition: opacity 0.15s ease;
+    transition: opacity 180ms ease;
   }
+
   .overlay-enter-from,
   .overlay-leave-to {
     opacity: 0;
   }
+}
 
+@media (max-width: 520px) {
   .main-inner {
-    padding: 20px 16px;
+    padding: 18px 12px 32px;
   }
 }
 </style>

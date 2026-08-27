@@ -10,7 +10,7 @@ import (
 var defaultConfigs = map[string]string{
 	"port_range_start": "20000", "port_range_end": "30000", "extra_ports_per_container": "5",
 	"default_volume_mount_path": "/data", "docker_extra_args": "", "email_enabled": "false",
-	"admin_email": "", "smtp_host": "", "smtp_port": "587", "smtp_username": "",
+	"admin_email": "", "public_url": "", "smtp_host": "", "smtp_port": "587", "smtp_username": "",
 	"smtp_password": "", "smtp_use_tls": "true",
 }
 

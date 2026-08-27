@@ -23,7 +23,7 @@ cd ServerDock
 cp .env.example .env
 ```
 
-Edit `.env` and change `SECRET_KEY` and `SSH_CREDENTIAL_KEY`. Generate random keys:
+Edit `.env`, change `SECRET_KEY` and `SSH_CREDENTIAL_KEY`, and set `PUBLIC_URL` to the address administrators use to open ServerDock. Generate random keys:
 
 ```bash
 # Generate SSH_CREDENTIAL_KEY (exactly 32 characters)
@@ -81,6 +81,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 - **Volume Management** — Create/list/delete Docker volumes
 - **Web Terminal** — Interactive SSH terminal to servers and containers via WebSocket
 - **Application Workflow** — Public users submit container requests, admins approve/reject with email notifications
+- **Email Approval Actions** — Admin notification emails include one-click ignore, reject, and approve actions with signed, expiring links; open admin views synchronize automatically
 - **System Config** — Port range, extra ports, volume mount path, SMTP settings, all configurable via UI
 
 ## API Overview
@@ -104,11 +105,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 |----------|----------|---------|-------------|
 | `SECRET_KEY` | Yes | — | JWT signing key |
 | `SSH_CREDENTIAL_KEY` | Yes | — | AES-256-GCM encryption key (32 chars) |
+| `PUBLIC_URL` | For email actions | — | Public browser origin used in administrator email action links; can be overridden in System Config |
 | `DATABASE_URL` | No | `data/serverdock.db` | SQLite database path |
 | `DEFAULT_ADMIN_USERNAME` | No | `admin` | Initial admin username |
 | `DEFAULT_ADMIN_PASSWORD` | No | `admin123` | Initial admin password |
 | `DEBUG` | No | `false` | Enable debug mode |
 | `PORT` | No | `8080` | Host port (compose) |
+
+Email action links expire after seven days and become unusable as soon as the application is processed. The security token is placed in the URL fragment and submitted with POST by the action page, so an email gateway fetching the link with GET cannot approve an application. Keep administrator notification emails private because each link carries approval authority.
 
 ## License
 

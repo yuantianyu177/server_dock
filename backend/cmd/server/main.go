@@ -33,7 +33,15 @@ func main() {
 	containerService := service.NewContainerService(serverService)
 	configService := service.NewConfigService(db)
 	emailService := service.NewSMTPEmailService(configService)
-	appService := service.NewApplicationService(db, serverService, containerService, configService, emailService.SendAsync)
+	appService := service.NewApplicationService(
+		db,
+		serverService,
+		containerService,
+		configService,
+		cfg.SecretKey,
+		cfg.PublicURL,
+		emailService.SendAsync,
+	)
 	terminalService := service.NewTerminalService(serverService)
 
 	// Ensure default configs

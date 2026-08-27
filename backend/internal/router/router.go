@@ -41,6 +41,8 @@ func Setup(debug bool, services *Services) *gin.Engine {
 	public.GET("/servers", applications.PublicListServers)
 	public.GET("/server/:id/images", applications.PublicListImages)
 	public.POST("/apply", applications.PublicSubmit)
+	public.GET("/email-action", applications.EmailActionPage)
+	public.POST("/email-action", applications.EmailAction)
 
 	authed := api.Group("")
 	authed.Use(handler.AuthMiddleware(services.Auth))

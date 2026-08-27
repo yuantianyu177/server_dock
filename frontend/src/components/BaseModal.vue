@@ -1,31 +1,106 @@
 <script setup>
-defineProps({
-  title: String,
-  size: { type: String, default: 'md' }  // sm | md | lg
+import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { X } from '@lucide/vue'
+
+const props = defineProps({
+  title: { type: String, required: true },
+  size: { type: String, default: 'md' },
+  closeOnBackdrop: { type: Boolean, default: true }
 })
+
 const emit = defineEmits(['close'])
+const modalRef = ref(null)
+const titleId = `modal-title-${useId()}`
+let previousFocus = null
+let previousOverflow = ''
+
+const focusableSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',')
+
+function close() {
+  emit('close')
+}
+
+function handleBackdrop() {
+  if (props.closeOnBackdrop) close()
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    close()
+    return
+  }
+  if (event.key !== 'Tab' || !modalRef.value) return
+
+  const focusable = [...modalRef.value.querySelectorAll(focusableSelector)]
+  if (focusable.length === 0) {
+    event.preventDefault()
+    modalRef.value.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+onMounted(async () => {
+  previousFocus = document.activeElement
+  previousOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  document.addEventListener('keydown', handleKeydown)
+  await nextTick()
+  const firstFocusable = modalRef.value?.querySelector(focusableSelector)
+  ;(firstFocusable || modalRef.value)?.focus()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  document.body.style.overflow = previousOverflow
+  previousFocus?.focus?.()
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="modal-backdrop" @click.self="emit('close')">
-      <div class="modal-box" :class="`modal-${size}`">
-        <div class="modal-header">
-          <h3 class="modal-title">{{ title }}</h3>
-          <button class="modal-close" @click="emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <slot />
-        </div>
-        <div v-if="$slots.footer" class="modal-footer">
-          <slot name="footer" />
-        </div>
+    <Transition name="modal-fade" appear>
+      <div class="modal-backdrop" @mousedown.self="handleBackdrop">
+        <section
+          ref="modalRef"
+          class="modal-box"
+          :class="`modal-${size}`"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="titleId"
+          tabindex="-1"
+        >
+          <header class="modal-header">
+            <h2 :id="titleId" class="modal-title">{{ title }}</h2>
+            <button class="modal-close" type="button" aria-label="关闭对话框" @click="close">
+              <X :size="18" aria-hidden="true" />
+            </button>
+          </header>
+          <div class="modal-body">
+            <slot />
+          </div>
+          <footer v-if="$slots.footer" class="modal-footer">
+            <slot name="footer" />
+          </footer>
+        </section>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -33,123 +108,143 @@ const emit = defineEmits(['close'])
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.32);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-  animation: backdrop-in 0.15s ease;
-}
-
-@keyframes backdrop-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.38);
 }
 
 .modal-box {
-  background: white;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  width: min(100%, 520px);
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 80px);
   overflow: hidden;
-  animation: modal-in 0.18s ease;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: var(--radius-modal);
+  outline: none;
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
 }
 
-@keyframes modal-in {
-  from { opacity: 0; transform: scale(0.97) translateY(10px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+.modal-sm {
+  max-width: 420px;
 }
 
-.modal-sm { width: 380px; }
-.modal-md { width: 520px; }
-.modal-lg { width: 720px; }
+.modal-md {
+  max-width: 560px;
+}
+
+.modal-lg {
+  max-width: 780px;
+}
 
 .modal-header {
-  padding: 18px 24px 16px;
+  min-height: 58px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-light);
-  flex-shrink: 0;
+  gap: 16px;
+  padding: 12px 18px 12px 22px;
+  border-bottom: 1px solid var(--divider-subtle);
 }
 
 .modal-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .modal-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-secondary);
   cursor: pointer;
-  transition: all 0.15s;
-  border: none;
-  background: none;
+  transition: background-color 160ms ease, color 160ms ease;
 }
+
 .modal-close:hover {
-  background: var(--cream-dark);
-  color: var(--text-primary);
+  background: #eeeeF1;
+  color: var(--ink);
 }
 
 .modal-body {
-  padding: 20px 24px;
-  overflow-y: auto;
   flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px;
 }
 
 .modal-footer {
-  padding: 14px 24px;
-  border-top: 1px solid var(--border-light);
+  min-height: 60px;
   display: flex;
+  flex: 0 0 auto;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 11px 22px;
+  border-top: 1px solid var(--divider-subtle);
+  background: #fafafa;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.modal-fade-enter-active .modal-box,
+.modal-fade-leave-active .modal-box {
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to,
+.modal-fade-enter-from .modal-box,
+.modal-fade-leave-to .modal-box {
+  opacity: 0;
+}
+
+.modal-fade-enter-from .modal-box,
+.modal-fade-leave-to .modal-box {
+  transform: translateY(8px) scale(0.985);
 }
 
 @media (max-width: 640px) {
   .modal-backdrop {
-    padding: 0;
     align-items: flex-end;
+    padding: 0;
   }
 
-  .modal-box {
-    max-height: 90vh;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    animation: modal-in-mobile 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  @keyframes modal-in-mobile {
-    from { opacity: 0; transform: translateY(40px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
+  .modal-box,
   .modal-sm,
   .modal-md,
   .modal-lg {
     width: 100%;
+    max-width: none;
+    max-height: min(92vh, 820px);
+    border-radius: var(--radius-modal) var(--radius-modal) 0 0;
   }
 
   .modal-header {
-    padding: 16px 18px 14px;
+    min-height: 56px;
+    padding-right: 14px;
+    padding-left: 18px;
   }
 
   .modal-body {
-    padding: 16px 18px;
+    padding: 18px;
   }
 
   .modal-footer {
-    padding: 12px 18px 16px;
+    padding: 12px 18px max(12px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
   }
 }

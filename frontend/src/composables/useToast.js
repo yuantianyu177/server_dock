@@ -18,6 +18,8 @@ export function useToast() {
   }
 
   function error(message) { add(message, 'error', 5000) }
-  function success(message) { add(message, 'success', 3000) }
-  return { toasts, remove, error, success }
+  function success(message) { add(message, 'success', 3200) }
+  function warning(message) { add(message, 'warning', 4500) }
+  function info(message) { add(message, 'info', 4000) }
+  return { toasts, remove, error, success, warning, info }
 }

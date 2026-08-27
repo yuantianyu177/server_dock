@@ -8,8 +8,7 @@ type Application struct {
 	ApplicantEmail string `gorm:"not null"`
 	ServerID       uint   `gorm:"not null;index"`
 	ImageID        uint   `gorm:"not null;index"`
-	Status         string `gorm:"not null;default:pending"` // pending, approved, rejected
-	AdminNotes     string
+	Status         string `gorm:"not null;default:pending"` // pending, approved, rejected, ignored
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	Server         Server `gorm:"foreignKey:ServerID;references:ID"`

@@ -1,11 +1,23 @@
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import {
+  ArrowLeft,
+  CircleAlert,
+  CircleCheck,
+  Mail,
+  RefreshCw,
+  Send,
+  UserRound
+} from '@lucide/vue'
 import { get, post } from '@/api/client'
+import BrandMark from '@/components/BrandMark.vue'
 
 const servers = ref([])
 const images = ref([])
 const serversLoading = ref(false)
 const imagesLoading = ref(false)
+const serversError = ref('')
+const imagesError = ref('')
 
 const form = ref({
   applicant_name: '',
@@ -15,33 +27,36 @@ const form = ref({
 })
 
 const submitting = ref(false)
-const error = ref('')
-const success = ref(false)
+const submitError = ref('')
+const submittedApplication = ref(null)
 
 const hasServers = computed(() => servers.value.length > 0)
 const hasImages = computed(() => images.value.length > 0)
+const selectedServer = computed(() => servers.value.find(server => Number(server.id) === Number(form.value.server_id)))
 
 const canSubmit = computed(() =>
   !submitting.value &&
   !imagesLoading.value &&
-  hasServers.value &&
+  !!form.value.applicant_name.trim() &&
+  !!form.value.applicant_email.trim() &&
   !!form.value.server_id &&
   !!form.value.image_id
 )
 
 async function loadServers() {
   serversLoading.value = true
-  error.value = ''
+  serversError.value = ''
   try {
     servers.value = await get('/applications/public/servers') || []
-    if (!servers.value.find((srv) => srv.id === Number(form.value.server_id))) {
+    if (!servers.value.some(server => Number(server.id) === Number(form.value.server_id))) {
       form.value.server_id = ''
       form.value.image_id = ''
       images.value = []
     }
-  } catch (e) {
+  } catch (error) {
     servers.value = []
     images.value = []
+    serversError.value = `无法读取可申请服务器：${error.message}`
   } finally {
     serversLoading.value = false
   }
@@ -49,364 +64,603 @@ async function loadServers() {
 
 async function loadImages(serverId) {
   form.value.image_id = ''
+  imagesError.value = ''
   if (!serverId) {
     images.value = []
-    imagesLoading.value = false
     return
   }
+
   imagesLoading.value = true
   try {
     images.value = await get(`/applications/public/server/${serverId}/images`) || []
-  } catch (e) {
+  } catch (error) {
     images.value = []
+    imagesError.value = `无法读取该服务器的镜像：${error.message}`
   } finally {
     imagesLoading.value = false
   }
 }
 
-watch(() => form.value.server_id, (id) => {
-  loadImages(id)
-})
+function validateForm() {
+  if (!form.value.applicant_name.trim()) return '请输入姓名。'
+  if (!form.value.applicant_email.trim()) return '请输入邮箱地址。'
+  if (!/^\S+@\S+\.\S+$/.test(form.value.applicant_email.trim())) return '请输入有效的邮箱地址。'
+  if (!form.value.server_id) return '请选择服务器。'
+  if (!form.value.image_id) return '请选择镜像。'
+  return ''
+}
 
-async function submit() {
-  if (!form.value.applicant_name || !form.value.applicant_email || !form.value.server_id || !form.value.image_id) {
-    error.value = 'Please fill in all required fields.'
+async function submitApplication() {
+  const validationError = validateForm()
+  if (validationError) {
+    submitError.value = validationError
     return
   }
+
   submitting.value = true
-  error.value = ''
+  submitError.value = ''
   try {
-    await post('/applications/public/apply', {
-      applicant_name: form.value.applicant_name,
-      applicant_email: form.value.applicant_email,
+    submittedApplication.value = await post('/applications/public/apply', {
+      applicant_name: form.value.applicant_name.trim(),
+      applicant_email: form.value.applicant_email.trim(),
       server_id: Number(form.value.server_id),
       image_id: Number(form.value.image_id)
     })
-    success.value = true
-  } catch (e) {
-    error.value = e.message || 'Submission failed. Please try again.'
+  } catch (error) {
+    submitError.value = `无法提交申请：${error.message}。请检查填写内容后重试。`
   } finally {
     submitting.value = false
   }
 }
 
+function resetApplication() {
+  form.value = { applicant_name: '', applicant_email: '', server_id: '', image_id: '' }
+  images.value = []
+  submittedApplication.value = null
+  submitError.value = ''
+}
+
+function formatServerOption(server) {
+  const parts = [server.host]
+  if (server.description?.trim()) parts.push(server.description.trim())
+  parts.push(server.load_available
+    ? `${server.running_containers || 0} 个容器正在运行`
+    : '容器运行数暂不可用')
+  return parts.join(' — ')
+}
+
+watch(() => form.value.server_id, loadImages)
 onMounted(loadServers)
 </script>
 
 <template>
   <div class="apply-page">
-    <div class="apply-bg" aria-hidden="true">
-      <div class="bg-blob bg-blob-1" />
-      <div class="bg-blob bg-blob-2" />
-    </div>
+    <header class="public-header">
+      <router-link class="public-brand" to="/apply" aria-label="ServerDock 容器申请页">
+        <BrandMark :size="34" />
+        <span>ServerDock</span>
+      </router-link>
+      <router-link class="login-link" to="/login"><ArrowLeft :size="15" aria-hidden="true" />管理员登录</router-link>
+    </header>
 
-    <div class="apply-wrap">
-      <!-- Page header (outside card) -->
-      <div class="apply-top animate-in">
-        <div class="apply-brand">
-          <div class="apply-brand-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="8" rx="2"/>
-              <rect x="2" y="14" width="20" height="8" rx="2"/>
-              <line x1="6" y1="6" x2="6.01" y2="6"/>
-              <line x1="6" y1="18" x2="6.01" y2="18"/>
-            </svg>
-          </div>
-          <span class="apply-brand-name">ServerDock</span>
-        </div>
-      </div>
+    <main class="apply-main">
+      <aside class="process-panel" aria-labelledby="process-title">
+        <p class="process-kicker">容器申请</p>
+        <h1 id="process-title">申请一个容器</h1>
+        <p class="process-description">选择服务器和管理员提供的镜像。审批通过后，连接地址、端口和密码会发送到你的邮箱。</p>
 
-      <!-- Card -->
-      <div class="apply-card animate-in animate-in-delay-1">
-        <div class="apply-card-header">
-          <h2 class="apply-title">Request a Container</h2>
-          <p class="apply-desc">Submit a request for access to a GPU server environment. You'll receive SSH connection details via email once approved.</p>
-        </div>
+        <ol class="process-list">
+          <li>
+            <span class="step-number">1</span>
+            <div><strong>填写申请</strong><span>选择服务器和镜像</span></div>
+          </li>
+          <li>
+            <span class="step-number">2</span>
+            <div><strong>管理员审核</strong><span>确认资源并创建容器</span></div>
+          </li>
+          <li>
+            <span class="step-number">3</span>
+            <div><strong>接收连接信息</strong><span>结果发送至申请邮箱</span></div>
+          </li>
+        </ol>
+      </aside>
 
-        <!-- Success state -->
-        <div v-if="success" class="apply-success">
-          <div class="success-icon-wrap">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-          </div>
-          <h3 class="success-title">Application Submitted</h3>
-          <p class="success-desc">Your request has been submitted. An administrator will review it and you'll receive an email notification with the result.</p>
-          <button class="btn btn-secondary" style="margin-top:24px" @click="success = false; form = { applicant_name: '', applicant_email: '', server_id: '', image_id: '' }">
-            Submit another request
-          </button>
-        </div>
-
-        <!-- Form -->
-        <form v-else class="apply-form" @submit.prevent="submit">
-          <div v-if="error" class="alert alert-error">{{ error }}</div>
-
-          <div class="form-section">
-            <div class="form-section-label">Your information</div>
-            <div class="form-group">
-              <label class="form-label">Full Name <span class="required">*</span></label>
-              <input v-model="form.applicant_name" class="form-input" placeholder="Zhang San" />
+      <section class="application-panel" aria-labelledby="application-title">
+        <template v-if="submittedApplication">
+          <div class="success-state">
+            <div class="success-heading">
+              <div class="success-icon"><CircleCheck :size="24" aria-hidden="true" /></div>
+              <div>
+                <p class="success-kicker">提交成功</p>
+                <h2 id="application-title">等待管理员审核</h2>
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">Email Address <span class="required">*</span></label>
-              <input v-model="form.applicant_email" type="email" class="form-input" placeholder="you@example.com" />
-              <span class="form-hint">Connection details will be sent to this address</span>
+            <p class="success-email">审批结果会发送到 <strong>{{ submittedApplication.applicant_email || form.applicant_email }}</strong></p>
+
+            <dl class="submission-summary" aria-label="本次申请内容">
+              <div>
+                <dt>服务器</dt>
+                <dd>{{ submittedApplication.server_host || selectedServer?.host || '—' }}</dd>
+              </div>
+              <div>
+                <dt>镜像</dt>
+                <dd>{{ submittedApplication.image_name || '—' }}</dd>
+              </div>
+            </dl>
+
+            <div class="success-note">
+              <Mail :size="17" aria-hidden="true" />
+              <span>管理员审核并创建容器后，连接信息会发送到同一邮箱。</span>
             </div>
+
+            <button class="btn btn-primary" type="button" @click="resetApplication">再申请一个容器</button>
           </div>
+        </template>
 
-          <div class="form-section">
-            <div class="form-section-label">Container configuration</div>
-            <div class="form-group">
-              <label class="form-label">Server <span class="required">*</span></label>
-              <select v-model.number="form.server_id" class="form-select" :disabled="serversLoading || !hasServers">
-                <option value="" disabled>
-                  {{ serversLoading ? 'Loading servers…' : hasServers ? 'Select a server…' : 'No servers available' }}
-                </option>
-                <option v-for="server in servers" :key="server.id" :value="server.id">
-                  {{ server.host }}{{ server.description ? ` — ${server.description}` : '' }}
-                </option>
-              </select>
-              <span v-if="!serversLoading && !hasServers" class="form-hint" style="color:var(--warning)">
-                No servers are currently available for new requests.
-              </span>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Image <span class="required">*</span></label>
-              <select v-model.number="form.image_id" class="form-select" :disabled="!form.server_id || imagesLoading || !hasImages">
-                <option value="" disabled>
-                  {{ !hasServers ? 'No environments available' : !form.server_id ? 'Select a server first' : imagesLoading ? 'Loading…' : hasImages ? 'Select an image…' : 'No images available' }}
-                </option>
-                <option v-for="image in images" :key="image.id" :value="image.id">{{ image.name }}</option>
-              </select>
-              <span v-if="form.server_id && !hasImages && !imagesLoading" class="form-hint" style="color:var(--warning)">
-                No images available for this server.
-              </span>
-            </div>
-          </div>
+        <template v-else>
+          <header class="application-heading">
+            <h2 id="application-title">容器申请表</h2>
+            <p>所有字段均为必填项。</p>
+          </header>
 
-          <button type="submit" class="btn btn-primary apply-submit" :disabled="!canSubmit">
-            <span v-if="submitting" class="spinner" style="width:14px;height:14px;border-color:rgba(255,255,255,0.3);border-top-color:white" />
-            {{ submitting ? 'Submitting…' : 'Submit Request' }}
-          </button>
-        </form>
+          <form class="application-form" @submit.prevent="submitApplication">
+            <div v-if="submitError" class="alert alert-error" role="alert"><CircleAlert :size="17" />{{ submitError }}</div>
 
-        <div class="apply-card-footer">
-          Already an admin?
-          <a href="/login">Sign in</a>
-        </div>
-      </div>
-    </div>
+            <fieldset>
+              <legend><UserRound :size="15" aria-hidden="true" />申请人信息</legend>
+              <div class="form-group">
+                <label class="form-label" for="applicant-name">姓名 <span class="required-mark">*</span></label>
+                <input id="applicant-name" v-model="form.applicant_name" class="form-input" autocomplete="name" placeholder="请输入真实姓名" :disabled="submitting" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="applicant-email">邮箱 <span class="required-mark">*</span></label>
+                <input id="applicant-email" v-model="form.applicant_email" type="email" class="form-input" autocomplete="email" placeholder="name@example.com" :disabled="submitting" required />
+                <span class="form-hint">审批结果和容器连接信息会发送到此邮箱。</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend class="sr-only">容器环境</legend>
+
+              <div v-if="serversError" class="alert alert-error" role="alert">
+                <CircleAlert :size="17" />
+                <span>{{ serversError }}</span>
+                <button class="inline-retry" type="button" @click="loadServers"><RefreshCw :size="13" />重试</button>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="application-server">服务器 <span class="required-mark">*</span></label>
+                <select id="application-server" v-model.number="form.server_id" class="form-select" :disabled="submitting || serversLoading || !hasServers" required>
+                  <option value="" disabled>{{ serversLoading ? '正在读取服务器…' : hasServers ? '选择服务器' : '当前没有可申请服务器' }}</option>
+                  <option v-for="serverItem in servers" :key="serverItem.id" :value="serverItem.id">
+                    {{ formatServerOption(serverItem) }}
+                  </option>
+                </select>
+                <span v-if="!serversLoading && !serversError && !hasServers" class="form-error">管理员尚未配置可申请服务器。</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="application-image">镜像 <span class="required-mark">*</span></label>
+                <select id="application-image" v-model.number="form.image_id" class="form-select" :disabled="submitting || !form.server_id || imagesLoading || !hasImages" required>
+                  <option value="" disabled>
+                    {{ !form.server_id ? '请先选择服务器' : imagesLoading ? '正在读取镜像…' : hasImages ? '选择镜像' : '该服务器没有可申请镜像' }}
+                  </option>
+                  <option v-for="image in images" :key="image.id" :value="image.id">{{ image.name }}</option>
+                </select>
+                <span v-if="imagesError" class="form-error">{{ imagesError }}</span>
+                <span v-else-if="form.server_id && !imagesLoading && !hasImages" class="form-error">请联系管理员为该服务器登记可申请镜像。</span>
+              </div>
+            </fieldset>
+
+            <button class="btn btn-primary submit-button" type="submit" :disabled="!canSubmit">
+              <span v-if="submitting" class="spinner submit-spinner" aria-hidden="true" />
+              <Send v-else :size="16" aria-hidden="true" />
+              {{ submitting ? '正在提交…' : '提交容器申请' }}
+            </button>
+          </form>
+        </template>
+      </section>
+    </main>
   </div>
 </template>
 
 <style scoped>
 .apply-page {
   min-height: 100vh;
-  background: var(--cream);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 48px 24px 64px;
-  position: relative;
-  overflow: hidden;
+  min-height: 100dvh;
+  padding: 0 42px;
+  background: var(--canvas);
 }
 
-.apply-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.bg-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-}
-
-.bg-blob-1 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(201, 100, 66, 0.07) 0%, transparent 70%);
-  top: -200px;
-  right: -150px;
-}
-
-.bg-blob-2 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(201, 100, 66, 0.05) 0%, transparent 70%);
-  bottom: -100px;
-  left: -100px;
-}
-
-.apply-wrap {
+.public-header {
   width: 100%;
-  max-width: 560px;
-  position: relative;
-  z-index: 1;
-}
-
-.apply-top {
-  margin-bottom: 24px;
-}
-
-.apply-brand {
+  max-width: 1120px;
+  min-height: 76px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: space-between;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--divider);
 }
 
-.apply-brand-icon {
+.public-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.login-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #0066cc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.apply-main {
+  width: 100%;
+  max-width: 1000px;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(440px, 1fr);
+  align-items: start;
+  gap: 76px;
+  margin: 0 auto;
+  padding: 58px 0 72px;
+}
+
+.process-panel {
+  position: sticky;
+  top: 42px;
+  padding-top: 12px;
+}
+
+.process-kicker,
+.success-kicker {
+  margin-bottom: 10px;
+  color: #0066cc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.process-panel h1 {
+  max-width: 380px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 730;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+.process-description {
+  max-width: 390px;
+  margin-top: 15px;
+  color: var(--ink-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.process-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 38px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.process-list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: start;
+  gap: 11px;
+  min-height: 63px;
+}
+
+.process-list li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: 0;
+  left: 14px;
+  width: 1px;
+  background: var(--divider);
+}
+
+.step-number {
   width: 30px;
   height: 30px;
-  background: var(--accent);
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  box-shadow: 0 2px 8px rgba(201, 100, 66, 0.28);
+  display: grid;
+  z-index: 1;
+  place-items: center;
+  border: 1px solid var(--divider);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.apply-brand-name {
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.02em;
+.process-list strong,
+.process-list div > span {
+  display: block;
 }
 
-.apply-card {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04);
-}
-
-.apply-card-header {
-  padding: 28px 32px 24px;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.apply-title {
-  font-size: 19px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-
-.apply-desc {
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-.apply-form {
-  padding: 24px 32px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.form-section-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-muted);
-}
-
-.required {
-  color: var(--accent);
-  margin-left: 1px;
-}
-
-.apply-submit {
-  width: 100%;
-  justify-content: center;
-  padding: 11px;
-  font-size: 14.5px;
-  box-shadow: 0 1px 4px rgba(201, 100, 66, 0.25);
-}
-
-.apply-card-footer {
-  padding: 16px 32px;
-  border-top: 1px solid var(--border-light);
-  text-align: center;
+.process-list strong {
+  margin-top: 2px;
+  color: var(--ink);
   font-size: 13px;
-  color: var(--text-muted);
-  background: var(--cream);
 }
 
-.apply-card-footer a {
-  color: var(--accent);
-  margin-left: 4px;
-  font-weight: 500;
+.process-list div > span {
+  margin-top: 2px;
+  color: var(--ink-secondary);
+  font-size: 11px;
 }
 
-.apply-card-footer a:hover {
-  opacity: 0.8;
+.application-panel {
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-modal);
+  background: var(--surface);
 }
 
-/* Success state */
-.apply-success {
-  padding: 52px 32px;
-  text-align: center;
+.application-heading {
+  padding: 26px 28px 20px;
+  border-bottom: 1px solid var(--divider-subtle);
 }
 
-.success-icon-wrap {
+.application-heading h2,
+.success-state h2 {
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.application-heading p {
+  margin-top: 4px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.application-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px 28px 28px;
+}
+
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.inline-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inline-retry:hover {
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.submit-button {
+  width: 100%;
+  min-height: 42px;
+}
+
+.submit-spinner {
+  width: 14px;
+  height: 14px;
+  color: #fff;
+}
+
+.success-state {
+  display: flex;
+  flex-direction: column;
+  padding: 38px 36px 34px;
+}
+
+.success-heading {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 15px;
+}
+
+.success-icon {
   width: 52px;
   height: 52px;
-  background: var(--success-bg);
+  display: grid;
+  place-items: center;
+  border: 1px solid #b9dec8;
+  border-radius: 14px;
+  background: var(--success-soft);
   color: var(--success);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 20px;
-  border: 2px solid var(--success-border);
 }
 
-.success-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 10px;
+.success-heading .success-kicker {
+  margin-bottom: 4px;
+  color: var(--success);
 }
 
-.success-desc {
-  font-size: 13.5px;
-  color: var(--text-secondary);
+.success-email {
+  margin-top: 24px;
+  color: var(--ink-secondary);
+  font-size: 13px;
   line-height: 1.65;
-  max-width: 380px;
-  margin: 0 auto;
 }
 
-@media (max-width: 768px) {
+.success-email strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.submission-summary {
+  margin: 23px 0 0;
+  border-top: 1px solid var(--divider-subtle);
+  border-bottom: 1px solid var(--divider-subtle);
+}
+
+.submission-summary > div {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.submission-summary > div + div {
+  border-top: 1px solid var(--divider-subtle);
+}
+
+.submission-summary dt {
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.submission-summary dd {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.success-note {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 13px 14px;
+  border-radius: var(--radius-control);
+  background: #f6f6f8;
+  color: var(--ink-secondary);
+}
+
+.success-note > svg {
+  color: var(--ink-tertiary);
+}
+
+.success-note > span {
+  color: var(--ink-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.success-state .btn {
+  align-self: center;
+  margin-top: 24px;
+}
+
+@media (max-width: 880px) {
   .apply-page {
-    padding: 24px 16px 48px;
+    padding: 0 24px;
   }
 
-  .apply-card-header {
-    padding: 20px 20px 18px;
+  .apply-main {
+    grid-template-columns: 1fr;
+    gap: 34px;
+    max-width: 560px;
+    padding: 42px 0 60px;
   }
 
-  .apply-form {
-    padding: 18px 20px 22px;
+  .process-panel {
+    position: static;
+    padding-top: 0;
   }
 
-  .apply-card-footer {
-    padding: 14px 20px;
+  .process-panel h1 {
+    font-size: 32px;
   }
 
-  .apply-success {
-    padding: 36px 20px;
+  .process-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  .process-list li {
+    grid-template-columns: 30px 1fr;
+    min-height: 0;
+  }
+
+  .process-list li::after {
+    display: none;
+  }
+}
+
+@media (max-width: 580px) {
+  .apply-page {
+    padding: 0 14px;
+  }
+
+  .public-header {
+    min-height: 64px;
+  }
+
+  .apply-main {
+    padding: 30px 0 42px;
+  }
+
+  .process-panel h1 {
+    font-size: 28px;
+  }
+
+  .process-list {
+    grid-template-columns: 1fr;
+    gap: 13px;
+  }
+
+  .application-heading,
+  .application-form {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .success-state {
+    padding: 30px 20px 26px;
   }
 }
 </style>

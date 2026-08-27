@@ -9,6 +9,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	// Clear env vars
 	os.Unsetenv("SECRET_KEY")
 	os.Unsetenv("SSH_CREDENTIAL_KEY")
+	os.Unsetenv("PUBLIC_URL")
 	os.Unsetenv("DATABASE_URL")
 	os.Unsetenv("DEFAULT_ADMIN_USERNAME")
 	os.Unsetenv("DEFAULT_ADMIN_PASSWORD")
@@ -37,11 +38,13 @@ func TestLoadConfigDefaults(t *testing.T) {
 func TestLoadConfigFromEnv(t *testing.T) {
 	os.Setenv("SECRET_KEY", "my-secret")
 	os.Setenv("SSH_CREDENTIAL_KEY", "my-ssh-key-32bytes-padded-here!")
+	os.Setenv("PUBLIC_URL", "https://serverdock.example.com")
 	os.Setenv("PORT", "9090")
 	os.Setenv("DEBUG", "true")
 	defer func() {
 		os.Unsetenv("SECRET_KEY")
 		os.Unsetenv("SSH_CREDENTIAL_KEY")
+		os.Unsetenv("PUBLIC_URL")
 		os.Unsetenv("PORT")
 		os.Unsetenv("DEBUG")
 	}()
@@ -53,6 +56,9 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	}
 	if cfg.SSHCredentialKey != "my-ssh-key-32bytes-padded-here!" {
 		t.Fatalf("Expected SSH_CREDENTIAL_KEY to be set, got %s", cfg.SSHCredentialKey)
+	}
+	if cfg.PublicURL != "https://serverdock.example.com" {
+		t.Fatalf("Expected PUBLIC_URL to be set, got %s", cfg.PublicURL)
 	}
 	if cfg.Port != "9090" {
 		t.Fatalf("Expected port 9090, got %s", cfg.Port)

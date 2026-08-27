@@ -8,6 +8,7 @@ import (
 type Config struct {
 	SecretKey            string
 	SSHCredentialKey     string
+	PublicURL            string
 	DatabaseURL          string
 	DefaultAdminUsername string
 	DefaultAdminPassword string
@@ -20,6 +21,7 @@ func Load() *Config {
 	return &Config{
 		SecretKey:            getEnv("SECRET_KEY", ""),
 		SSHCredentialKey:     getEnv("SSH_CREDENTIAL_KEY", ""),
+		PublicURL:            getEnv("PUBLIC_URL", ""),
 		DatabaseURL:          getEnv("DATABASE_URL", "data/serverdock.db"),
 		DefaultAdminUsername: getEnv("DEFAULT_ADMIN_USERNAME", "admin"),
 		DefaultAdminPassword: getEnv("DEFAULT_ADMIN_PASSWORD", "admin123"),

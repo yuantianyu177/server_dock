@@ -2,8 +2,10 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"serverdock/internal/dto"
 	"serverdock/internal/model"
@@ -30,7 +32,15 @@ func setupAppService(t *testing.T) (*ApplicationService, *MockEmailServiceImpl, 
 	if err := config.EnsureDefaults(); err != nil {
 		t.Fatalf("create default config: %v", err)
 	}
-	service := NewApplicationService(db, servers, containers, config, mockEmail.SendAsync)
+	service := NewApplicationService(
+		db,
+		servers,
+		containers,
+		config,
+		"test-email-action-secret",
+		"http://serverdock.test",
+		mockEmail.SendAsync,
+	)
 
 	if _, err := servers.Create(&dto.CreateServerRequest{
 		Host: "GPU Server", Hostname: "10.0.0.1", User: "root", AuthType: "password", Credential: "pass",
@@ -74,10 +84,94 @@ func TestApplicationServiceSubmitNotifiesAdmin(t *testing.T) {
 	if email.AsyncCalls != 1 {
 		t.Fatalf("expected one email, got %d", email.AsyncCalls)
 	}
-	for _, value := range []string{"Ubuntu CUDA", "GPU Server", "zhang@example.com"} {
+	for _, value := range []string{
+		"Ubuntu CUDA", "GPU Server", "zhang@example.com",
+		"忽略", "拒绝", "批准",
+		"http://serverdock.test/api/applications/public/email-action?action=ignore#token=",
+		"http://serverdock.test/api/applications/public/email-action?action=reject#token=",
+		"http://serverdock.test/api/applications/public/email-action?action=approve#token=",
+	} {
 		if !strings.Contains(email.SentEmails[0].Body, value) {
 			t.Fatalf("email does not contain %q", value)
 		}
+	}
+}
+
+func TestApplicationServiceEmailActions(t *testing.T) {
+	tests := []struct {
+		action string
+		status string
+	}{
+		{action: "ignore", status: "ignored"},
+		{action: "reject", status: "rejected"},
+		{action: "approve", status: "approved"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.action, func(t *testing.T) {
+			service, _, _ := setupAppService(t)
+			application := submitTestApplication(t, service)
+			token, err := service.createEmailActionToken(application.ID, test.action)
+			if err != nil {
+				t.Fatalf("create email action token: %v", err)
+			}
+
+			response, err := service.HandleEmailAction(token)
+			if err != nil {
+				t.Fatalf("handle email action: %v", err)
+			}
+			if response.Status != test.status {
+				t.Fatalf("expected status %q, got %q", test.status, response.Status)
+			}
+			adminApplications, err := service.List()
+			if err != nil {
+				t.Fatalf("load admin applications after email action: %v", err)
+			}
+			if len(adminApplications) != 1 || adminApplications[0].Status != test.status {
+				t.Fatalf("admin list did not reflect email action: %+v", adminApplications)
+			}
+			if _, err := service.HandleEmailAction(token); !errors.Is(err, ErrApplicationNotPending) {
+				t.Fatalf("expected one-time link to be rejected, got %v", err)
+			}
+		})
+	}
+}
+
+func TestApplicationServiceEmailActionRejectsInvalidAndExpiredTokens(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	application := submitTestApplication(t, service)
+	now := time.Date(2026, time.August, 27, 8, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	token, err := service.createEmailActionToken(application.ID, "ignore")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.HandleEmailAction(token + "tampered"); !errors.Is(err, ErrInvalidEmailAction) {
+		t.Fatalf("expected tampered token to fail, got %v", err)
+	}
+	service.now = func() time.Time { return now.Add(emailActionTokenTTL + time.Second) }
+	if _, err := service.HandleEmailAction(token); !errors.Is(err, ErrInvalidEmailAction) {
+		t.Fatalf("expected expired token to fail, got %v", err)
+	}
+}
+
+func TestApplicationServiceEmailActionsUseConfiguredPublicURL(t *testing.T) {
+	service, email, _ := setupAppService(t)
+	if err := service.configService.Set("admin_email", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.configService.Set("public_url", "https://dock.example.com/base/?from=unsafe#fragment"); err != nil {
+		t.Fatal(err)
+	}
+	submitTestApplication(t, service)
+
+	body := email.SentEmails[0].Body
+	if !strings.Contains(body, "https://dock.example.com/base/api/applications/public/email-action?action=approve#token=") {
+		t.Fatalf("email does not use configured public URL: %s", body)
+	}
+	if strings.Contains(body, "from=unsafe") || strings.Contains(body, "#fragment") {
+		t.Fatal("public URL query or fragment leaked into action links")
 	}
 }
 
@@ -119,17 +213,76 @@ func TestApplicationServiceList(t *testing.T) {
 	}
 }
 
+func TestApplicationServiceListPublicServersIncludesContainerLoad(t *testing.T) {
+	service, _, ssh := setupAppService(t)
+	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
+		if strings.HasPrefix(command, "docker ps -a ") {
+			return "api\tubuntu:22.04\tUp 2 hours\t0.0.0.0:20000->22/tcp\tabc123\nworker\tubuntu:22.04\tExited (0) 1 hour ago\t\tdef456", nil
+		}
+		return "", nil
+	}
+
+	servers, err := service.ListPublicServers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 1 || !servers[0].LoadAvailable || servers[0].RunningContainers != 1 || servers[0].TotalContainers != 2 {
+		t.Fatalf("unexpected public server load: %+v", servers)
+	}
+}
+
+func TestApplicationServiceListPublicServersKeepsUnavailableLoad(t *testing.T) {
+	service, _, ssh := setupAppService(t)
+	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
+		if strings.HasPrefix(command, "docker ps -a ") {
+			return "", errors.New("docker unavailable")
+		}
+		return "", nil
+	}
+
+	servers, err := service.ListPublicServers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 1 || servers[0].LoadAvailable || servers[0].RunningContainers != 0 || servers[0].TotalContainers != 0 {
+		t.Fatalf("unexpected unavailable public server load: %+v", servers)
+	}
+}
+
 func TestApplicationServiceReject(t *testing.T) {
 	service, email, _ := setupAppService(t)
 	application := submitTestApplication(t, service)
-	response, err := service.Reject(application.ID, "Not enough resources")
+	response, err := service.Reject(application.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if response.Status != "rejected" || email.AsyncCalls != 1 {
 		t.Fatalf("unexpected rejection result: %+v, emails=%d", response, email.AsyncCalls)
 	}
-	if _, err := service.Reject(application.ID, "again"); !errors.Is(err, ErrApplicationNotPending) {
+	if _, err := service.Reject(application.ID); !errors.Is(err, ErrApplicationNotPending) {
+		t.Fatalf("expected ErrApplicationNotPending, got %v", err)
+	}
+}
+
+func TestApplicationServiceIgnoreDoesNotSendEmail(t *testing.T) {
+	service, email, _ := setupAppService(t)
+	application := submitTestApplication(t, service)
+	emailCallsBeforeIgnore := email.AsyncCalls
+
+	response, err := service.Ignore(application.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "ignored" {
+		t.Fatalf("unexpected ignore result: %+v", response)
+	}
+	if email.AsyncCalls != emailCallsBeforeIgnore {
+		t.Fatalf("ignored application should not send email, calls changed from %d to %d", emailCallsBeforeIgnore, email.AsyncCalls)
+	}
+	if response.ConnectionInfo != nil {
+		t.Fatal("ignored application should not include connection information")
+	}
+	if _, err := service.Ignore(application.ID); !errors.Is(err, ErrApplicationNotPending) {
 		t.Fatalf("expected ErrApplicationNotPending, got %v", err)
 	}
 }
@@ -148,12 +301,26 @@ func TestApplicationServiceApprove(t *testing.T) {
 	}
 	application := submitTestApplication(t, service)
 
-	response, err := service.Approve(application.ID, "Approved for testing")
+	response, err := service.Approve(application.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Status != "approved" || response.AdminNotes != "Approved for testing" || email.AsyncCalls != 1 {
+	if response.Status != "approved" || email.AsyncCalls != 1 {
 		t.Fatalf("unexpected approval result: %+v, emails=%d", response, email.AsyncCalls)
+	}
+	if response.ConnectionInfo == nil {
+		t.Fatal("expected approval response to include connection information")
+	}
+	connection := response.ConnectionInfo
+	if connection.Server != "10.0.0.1" || connection.User != "root" || connection.SSHPort == 0 || connection.Password == "" {
+		t.Fatalf("unexpected connection information: %+v", connection)
+	}
+	if connection.ExtraPorts != "20001-20005" {
+		t.Fatalf("unexpected extra ports: %q", connection.ExtraPorts)
+	}
+	expectedCommand := fmt.Sprintf("ssh -p %d root@10.0.0.1", connection.SSHPort)
+	if connection.SSHCommand != expectedCommand {
+		t.Fatalf("unexpected SSH command: %q", connection.SSHCommand)
 	}
 	if strings.ContainsAny(runCommand, "\r\n") {
 		t.Fatalf("docker command should be one line: %q", runCommand)
@@ -165,18 +332,35 @@ func TestApplicationServiceApprove(t *testing.T) {
 	}
 }
 
-func TestApplicationServiceApproveContainerFailure(t *testing.T) {
+func TestApplicationServiceApproveContainerFailureLeavesApplicationRetryable(t *testing.T) {
 	service, _, ssh := setupAppService(t)
+	createShouldFail := true
 	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
-		if strings.HasPrefix(command, "docker run ") {
+		if strings.HasPrefix(command, "docker run ") && createShouldFail {
 			return "", errors.New("docker daemon unavailable")
 		}
-		return "", nil
+		return "created", nil
 	}
 	application := submitTestApplication(t, service)
-	_, err := service.Approve(application.ID, "")
+	_, err := service.Approve(application.ID)
 	if !errors.Is(err, ErrContainerProvisioning) || !strings.Contains(err.Error(), "docker daemon unavailable") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	var stored model.Application
+	if err := service.db.First(&stored, application.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "pending" {
+		t.Fatalf("failed approval changed application status to %q", stored.Status)
+	}
+
+	createShouldFail = false
+	response, err := service.Approve(application.ID)
+	if err != nil {
+		t.Fatalf("retry approval: %v", err)
+	}
+	if response.Status != "approved" {
+		t.Fatalf("unexpected retry result: %+v", response)
 	}
 }
 
@@ -186,8 +370,31 @@ func TestApplicationServiceApproveRejectsEmptyImageAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := submitTestApplication(t, service)
-	_, err := service.Approve(application.ID, "")
+	_, err := service.Approve(application.ID)
 	if !errors.Is(err, ErrContainerProvisioning) || !strings.Contains(err.Error(), "empty image address") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplicationServiceMissingImageDoesNotHidePendingApplications(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	toReject := submitTestApplication(t, service)
+	toIgnore := submitTestApplication(t, service)
+	if err := service.db.Delete(&model.Image{}, toReject.ImageID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	applications, err := service.List()
+	if err != nil || len(applications) != 2 {
+		t.Fatalf("expected orphaned applications to remain visible, got %d (%v)", len(applications), err)
+	}
+	if _, err := service.Approve(toReject.ID); !errors.Is(err, ErrContainerProvisioning) {
+		t.Fatalf("expected missing image to be a provisioning error, got %v", err)
+	}
+	if response, err := service.Reject(toReject.ID); err != nil || response.Status != "rejected" {
+		t.Fatalf("reject application with missing image: response=%+v err=%v", response, err)
+	}
+	if response, err := service.Ignore(toIgnore.ID); err != nil || response.Status != "ignored" {
+		t.Fatalf("ignore application with missing image: response=%+v err=%v", response, err)
 	}
 }

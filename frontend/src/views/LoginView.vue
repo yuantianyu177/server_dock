@@ -1,28 +1,43 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  ArrowRight,
+  Boxes,
+  Container,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Server,
+  SquareTerminal
+} from '@lucide/vue'
 import { auth } from '@/stores/auth'
+import { useToast } from '@/composables/useToast'
+import BrandMark from '@/components/BrandMark.vue'
 
 const router = useRouter()
 const route = useRoute()
+const toast = useToast()
 const username = ref('')
 const password = ref('')
+const passwordVisible = ref(false)
 const loading = ref(false)
-const error = ref('')
 
 async function handleLogin() {
-  if (!username.value || !password.value) {
-    error.value = 'Please enter username and password.'
+  if (!username.value.trim() || !password.value) {
+    toast.warning('请输入用户名和密码')
     return
   }
+
   loading.value = true
-  error.value = ''
   try {
-    await auth.login(username.value, password.value)
-    const redirect = route.query.redirect || '/servers'
-    router.push(redirect)
-  } catch (e) {
-    error.value = e.message || 'Login failed. Please check your credentials.'
+    await auth.login(username.value.trim(), password.value)
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      ? route.query.redirect
+      : '/servers'
+    await router.push(redirect)
+  } catch (loginError) {
+    toast.error(`无法登录：${loginError.message || '请检查用户名和密码'}`)
   } finally {
     loading.value = false
   }
@@ -31,212 +46,384 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
-    <!-- Background grid -->
-    <div class="login-bg" aria-hidden="true">
-      <div class="bg-blob bg-blob-1" />
-      <div class="bg-blob bg-blob-2" />
-    </div>
+    <header class="public-header">
+      <router-link class="public-brand" to="/login" aria-label="ServerDock 登录页">
+        <BrandMark :size="34" />
+        <span>ServerDock</span>
+      </router-link>
+      <router-link class="application-link" to="/apply">
+        申请容器
+        <ArrowRight :size="15" aria-hidden="true" />
+      </router-link>
+    </header>
 
-    <div class="login-card animate-in">
-      <!-- Brand -->
-      <div class="login-brand">
-        <div class="login-brand-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="2" width="20" height="8" rx="2"/>
-            <rect x="2" y="14" width="20" height="8" rx="2"/>
-            <line x1="6" y1="6" x2="6.01" y2="6"/>
-            <line x1="6" y1="18" x2="6.01" y2="18"/>
-          </svg>
-        </div>
-        <h1 class="login-brand-name">ServerDock</h1>
-      </div>
+    <main class="login-main">
+      <section class="login-context" aria-labelledby="login-context-title">
+        <p class="context-kicker">基础设施控制台</p>
+        <h1 id="login-context-title">进入 ServerDock</h1>
+        <p class="context-description">登录后管理服务器、Docker 资源、Web Terminal 和容器申请。</p>
 
-      <div class="login-heading">
-        <h2 class="login-title">Welcome back</h2>
-        <p class="login-subtitle">Sign in to the admin panel</p>
-      </div>
-
-      <form class="login-form" @submit.prevent="handleLogin">
-        <Transition name="fade">
-          <div v-if="error" class="alert alert-error">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            {{ error }}
+        <div class="context-flow" aria-label="ServerDock 管理范围">
+          <div class="flow-item">
+            <span class="flow-icon"><Server :size="18" :stroke-width="1.7" /></span>
+            <div><strong>服务器连接</strong><span>SSH 主机与凭据</span></div>
           </div>
-        </Transition>
-
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input
-            v-model="username"
-            type="text"
-            class="form-input"
-            placeholder="admin"
-            autocomplete="username"
-            autofocus
-          />
+          <div class="flow-line" aria-hidden="true" />
+          <div class="flow-item">
+            <span class="flow-icon"><Container :size="18" :stroke-width="1.7" /></span>
+            <div><strong>Docker 资源</strong><span>容器、镜像与数据卷</span></div>
+          </div>
+          <div class="flow-line" aria-hidden="true" />
+          <div class="flow-item">
+            <span class="flow-icon"><SquareTerminal :size="18" :stroke-width="1.7" /></span>
+            <div><strong>远程操作</strong><span>Web Terminal 与审批</span></div>
+          </div>
         </div>
+      </section>
 
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input
-            v-model="password"
-            type="password"
-            class="form-input"
-            placeholder="••••••••"
-            autocomplete="current-password"
-            @keyup.enter="handleLogin"
-          />
+      <section class="login-panel" aria-labelledby="login-title">
+        <div class="panel-icon" aria-hidden="true"><LockKeyhole :size="20" /></div>
+        <h2 id="login-title">管理员登录</h2>
+        <p class="login-description">使用 ServerDock 管理员账户继续。</p>
+
+        <form class="login-form" @submit.prevent="handleLogin">
+          <div class="form-group">
+            <label class="form-label" for="login-username">用户名</label>
+            <input
+              id="login-username"
+              v-model="username"
+              class="form-input"
+              type="text"
+              autocomplete="username"
+              autofocus
+              placeholder="请输入用户名"
+              :disabled="loading"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="login-password">密码</label>
+            <div class="password-field">
+              <input
+                id="login-password"
+                v-model="password"
+                class="form-input"
+                :type="passwordVisible ? 'text' : 'password'"
+                autocomplete="current-password"
+                placeholder="请输入密码"
+                :disabled="loading"
+                required
+              />
+              <button
+                class="password-toggle"
+                type="button"
+                :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
+                :aria-pressed="passwordVisible"
+                @click="passwordVisible = !passwordVisible"
+              >
+                <Eye v-if="passwordVisible" :size="17" aria-hidden="true" />
+                <EyeOff v-else :size="17" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary login-button" type="submit" :disabled="loading">
+            <span v-if="loading" class="spinner login-spinner" aria-hidden="true" />
+            {{ loading ? '正在登录…' : '登录管理控制台' }}
+          </button>
+        </form>
+
+        <div class="panel-footer">
+          <Boxes :size="15" aria-hidden="true" />
+          <span>需要容器环境？</span>
+          <router-link to="/apply">提交申请</router-link>
         </div>
-
-        <button type="submit" class="btn btn-primary login-btn" :disabled="loading">
-          <span v-if="loading" class="spinner" style="width:14px;height:14px;border-color:rgba(255,255,255,0.3);border-top-color:white" />
-          {{ loading ? 'Signing in…' : 'Sign in' }}
-        </button>
-      </form>
-
-      <div class="login-footer">
-        <a href="/apply" class="login-apply-link">
-          Apply for a container
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
-        </a>
-      </div>
-    </div>
+      </section>
+    </main>
   </div>
 </template>
 
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: var(--cream);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 42px;
+  background: var(--canvas);
+}
+
+.public-header {
+  width: 100%;
+  max-width: 1120px;
+  min-height: 76px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
+  justify-content: space-between;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--divider);
 }
 
-.login-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.bg-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-}
-
-.bg-blob-1 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(201, 100, 66, 0.07) 0%, transparent 70%);
-  top: -150px;
-  right: -100px;
-}
-
-.bg-blob-2 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(201, 100, 66, 0.05) 0%, transparent 70%);
-  bottom: -100px;
-  left: -80px;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 368px;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 36px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
-  position: relative;
-  z-index: 1;
-}
-
-.login-brand {
-  display: flex;
+.public-brand {
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 28px;
+  font-family: var(--font-display);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
 }
 
-.login-brand-icon {
-  width: 36px;
-  height: 36px;
-  background: var(--accent);
-  border-radius: 9px;
+.application-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #0066cc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.application-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.login-main {
+  width: 100%;
+  max-width: 1000px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 410px;
+  align-items: center;
+  gap: 96px;
+  margin: auto;
+  padding: 62px 0 84px;
+}
+
+.context-kicker {
+  margin-bottom: 12px;
+  color: #0066cc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.login-context h1 {
+  max-width: 430px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5vw, 48px);
+  font-weight: 730;
+  letter-spacing: -0.045em;
+  line-height: 1.03;
+}
+
+.context-description {
+  max-width: 430px;
+  margin-top: 16px;
+  color: var(--ink-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.context-flow {
+  margin-top: 42px;
+}
+
+.flow-item {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 11px;
+}
+
+.flow-icon {
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 2px 8px rgba(201, 100, 66, 0.3);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  line-height: 0;
 }
 
-.login-brand-name {
-  font-family: var(--font-serif);
+.flow-icon :deep(svg) {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.flow-item div > strong,
+.flow-item div > span {
+  display: block;
+}
+
+.flow-item strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.flow-item div > span {
+  margin-top: 1px;
+  color: var(--ink-secondary);
+  font-size: 11px;
+}
+
+.flow-line {
+  width: 1px;
+  height: 14px;
+  margin-left: 19px;
+  background: var(--divider);
+}
+
+.login-panel {
+  padding: 32px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-modal);
+  background: var(--surface);
+}
+
+.panel-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 22px;
+  border-radius: 11px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.login-panel h2 {
+  color: var(--ink);
   font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
-.login-heading {
-  margin-bottom: 24px;
-}
-
-.login-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-
-.login-subtitle {
-  font-size: 13.5px;
-  color: var(--text-muted);
+.login-description {
   margin-top: 4px;
+  color: var(--ink-secondary);
+  font-size: 13px;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  margin-top: 26px;
 }
 
-.login-btn {
+.password-field {
+  position: relative;
+}
+
+.password-field .form-input {
+  padding-right: 42px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  background: #eeeef1;
+  color: var(--ink);
+}
+
+.login-button {
   width: 100%;
-  justify-content: center;
-  padding: 10px;
-  font-size: 14.5px;
-  margin-top: 4px;
-  box-shadow: 0 1px 4px rgba(201, 100, 66, 0.25);
+  min-height: 42px;
+  margin-top: 3px;
 }
 
-.login-footer {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-light);
-  text-align: center;
+.login-spinner {
+  width: 14px;
+  height: 14px;
+  color: #fff;
 }
 
-.login-apply-link {
-  display: inline-flex;
+.panel-footer {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--text-muted);
-  text-decoration: none;
-  transition: color 0.15s;
+  gap: 5px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--divider-subtle);
+  color: var(--ink-secondary);
+  font-size: 12px;
 }
 
-.login-apply-link:hover {
-  color: var(--accent);
+.panel-footer a {
+  margin-left: 2px;
+  color: #0066cc;
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .login-page {
+    padding: 0 24px;
+  }
+
+  .login-main {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    max-width: 460px;
+    padding: 44px 0 64px;
+  }
+
+  .login-context h1 {
+    font-size: 34px;
+  }
+
+  .context-flow {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .login-page {
+    padding: 0 16px;
+  }
+
+  .public-header {
+    min-height: 64px;
+  }
+
+  .login-main {
+    display: block;
+    padding: 32px 0 42px;
+  }
+
+  .login-context {
+    margin-bottom: 28px;
+  }
+
+  .login-context h1 {
+    font-size: 30px;
+  }
+
+  .context-description {
+    font-size: 14px;
+  }
+
+  .login-panel {
+    padding: 24px 20px;
+  }
 }
 </style>
