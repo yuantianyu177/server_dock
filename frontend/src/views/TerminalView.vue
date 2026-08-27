@@ -17,9 +17,9 @@ let fitAddon = null
 let ws = null
 
 async function initTerminal() {
-  const { Terminal } = await import('xterm')
-  const { FitAddon } = await import('xterm-addon-fit')
-  await import('xterm/css/xterm.css')
+  const { Terminal } = await import('@xterm/xterm')
+  const { FitAddon } = await import('@xterm/addon-fit')
+  await import('@xterm/xterm/css/xterm.css')
 
   term = new Terminal({
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",

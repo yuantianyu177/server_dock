@@ -1,15 +1,15 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:26.7.0-alpine3.24 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --global npm@12.0.2 && npm ci
 
 COPY . .
 RUN npm run build
 
 # Runtime stage
-FROM nginx:1.27-alpine
+FROM nginx:1.31.4-alpine3.24
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

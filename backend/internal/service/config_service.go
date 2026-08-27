@@ -1,94 +1,58 @@
 package service
 
 import (
-	"serverdock/internal/dto"
-	"serverdock/internal/repository"
-	"strconv"
+	"serverdock/internal/model"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var defaultConfigs = map[string]string{
-	"port_range_start":           "20000",
-	"port_range_end":             "30000",
-	"extra_ports_per_container":  "5",
-	"default_volume_mount_path":  "/data",
-	"docker_extra_args":          "",
-	"email_enabled":              "false",
-	"admin_email":                "",
-	"smtp_host":                  "",
-	"smtp_port":                  "587",
-	"smtp_username":              "",
-	"smtp_password":              "",
-	"smtp_use_tls":               "true",
+	"port_range_start": "20000", "port_range_end": "30000", "extra_ports_per_container": "5",
+	"default_volume_mount_path": "/data", "docker_extra_args": "", "email_enabled": "false",
+	"admin_email": "", "smtp_host": "", "smtp_port": "587", "smtp_username": "",
+	"smtp_password": "", "smtp_use_tls": "true",
 }
 
-type ConfigService struct {
-	configRepo *repository.ConfigRepo
-}
+type ConfigService struct{ db *gorm.DB }
 
-func NewConfigService(configRepo *repository.ConfigRepo) *ConfigService {
-	return &ConfigService{configRepo: configRepo}
-}
+func NewConfigService(db *gorm.DB) *ConfigService { return &ConfigService{db: db} }
 
-// EnsureDefaults initializes default config values if they don't exist.
 func (s *ConfigService) EnsureDefaults() error {
-	for key, val := range defaultConfigs {
-		if _, err := s.configRepo.Get(key); err != nil {
-			if err := s.configRepo.Set(key, val); err != nil {
-				return err
-			}
+	for key, value := range defaultConfigs {
+		if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.SystemConfig{Key: key, Value: value}).Error; err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (s *ConfigService) Get(key string) string {
-	val, err := s.configRepo.Get(key)
-	if err != nil {
-		if def, ok := defaultConfigs[key]; ok {
-			return def
-		}
-		return ""
+	var config model.SystemConfig
+	if err := s.db.First(&config, "key = ?", key).Error; err == nil {
+		return config.Value
 	}
-	return val
-}
-
-func (s *ConfigService) GetInt(key string) int {
-	val := s.Get(key)
-	n, _ := strconv.Atoi(val)
-	return n
+	return defaultConfigs[key]
 }
 
 func (s *ConfigService) Set(key, value string) error {
-	return s.configRepo.Set(key, value)
-}
-
-func (s *ConfigService) List() ([]dto.ConfigItem, error) {
-	configs, err := s.configRepo.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	var items []dto.ConfigItem
-	for _, cfg := range configs {
-		items = append(items, dto.ConfigItem{Key: cfg.Key, Value: cfg.Value})
-	}
-	return items, nil
+	config := model.SystemConfig{Key: key, Value: value}
+	return s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value"}),
+	}).Create(&config).Error
 }
 
 func (s *ConfigService) GetAllAsMap() (map[string]string, error) {
-	configs, err := s.configRepo.GetAll()
-	if err != nil {
+	var configs []model.SystemConfig
+	if err := s.db.Find(&configs).Error; err != nil {
 		return nil, err
 	}
-
-	result := make(map[string]string)
-	// Start with defaults
-	for k, v := range defaultConfigs {
-		result[k] = v
+	result := make(map[string]string, len(defaultConfigs))
+	for key, value := range defaultConfigs {
+		result[key] = value
 	}
-	// Override with DB values
-	for _, cfg := range configs {
-		result[cfg.Key] = cfg.Value
+	for _, config := range configs {
+		result[config.Key] = config.Value
 	}
 	return result, nil
 }

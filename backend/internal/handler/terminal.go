@@ -1,15 +1,11 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"sync"
 
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -39,12 +35,12 @@ type resizeMessage struct {
 func (h *TerminalHandler) validateToken(c *gin.Context) bool {
 	token := c.Query("token")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, pkg.ErrorResponse(401, "token required"))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token required"})
 		return false
 	}
 	_, _, err := h.authService.ValidateToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, pkg.ErrorResponse(401, "invalid token"))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return false
 	}
 	return true
@@ -77,12 +73,12 @@ func (h *TerminalHandler) ContainerTerminal(c *gin.Context) {
 
 	containerName := c.Param("container_name")
 	if !service.ValidateContainerName(containerName) {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid container name"))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid container name"})
 		return
 	}
 
 	command := "docker exec -it " + containerName + " /bin/bash"
-	h.handleTerminal(c, uint(serverID), command)
+	h.handleTerminal(c, serverID, command)
 }
 
 func (h *TerminalHandler) handleTerminal(c *gin.Context, serverID uint, command string) {
@@ -93,17 +89,12 @@ func (h *TerminalHandler) handleTerminal(c *gin.Context, serverID uint, command 
 	}
 	defer conn.Close()
 
-	// Generate unique session ID to avoid collisions
-	randBytes := make([]byte, 8)
-	rand.Read(randBytes)
-	sessionID := hex.EncodeToString(randBytes) + "-" + strconv.FormatUint(uint64(serverID), 10)
-
-	session, err := h.terminalService.CreateSession(sessionID, serverID, command)
+	session, err := h.terminalService.CreateSession(serverID, command)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("Error: "+err.Error()))
 		return
 	}
-	defer h.terminalService.CloseSession(sessionID)
+	defer session.Close()
 
 	// Mutex to protect concurrent WebSocket writes
 	var wsMu sync.Mutex

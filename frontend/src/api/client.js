@@ -1,60 +1,38 @@
-import axios from 'axios'
-import router from '@/router'
-
-function unwrapResponseData(payload) {
-  if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')) {
-    return payload.data
+async function request(path, { method = 'GET', params, data } = {}) {
+  const url = new URL(`/api${path}`, window.location.origin)
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, value)
   }
-  return payload
-}
 
-const client = axios.create({
-  baseURL: '/api',
-  timeout: 60000
-})
-
-// Attach JWT token to every request
-client.interceptors.request.use((config) => {
+  const headers = {}
   const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (data !== undefined) headers['Content-Type'] = 'application/json'
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: data === undefined ? undefined : JSON.stringify(data),
+    signal: AbortSignal.timeout(60000)
+  })
+
+  if (response.status === 401) {
+    localStorage.removeItem('token')
+    if (location.pathname !== '/login') location.assign('/login')
   }
-  return config
-})
 
-// Handle 401 globally
-client.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      router.push('/login')
-    }
-    // Normalize error message
-    const message = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown error'
-    return Promise.reject(new Error(message))
+  const text = await response.text()
+  let body = null
+  if (text) {
+    try { body = JSON.parse(text) } catch { body = text }
   }
-)
-
-// Unwrap the standard { success, data } envelope
-export async function get(url, params) {
-  const res = await client.get(url, { params })
-  return unwrapResponseData(res.data)
+  if (!response.ok) {
+    throw new Error(body?.error || response.statusText || 'Request failed')
+  }
+  return body
 }
 
-export async function post(url, data) {
-  const res = await client.post(url, data)
-  return unwrapResponseData(res.data)
-}
-
-export async function put(url, data) {
-  const res = await client.put(url, data)
-  return unwrapResponseData(res.data)
-}
-
-export async function del(url) {
-  const res = await client.delete(url)
-  return unwrapResponseData(res.data)
-}
-
-export default client
+export const get = (path, params) => request(path, { params })
+export const post = (path, data) => request(path, { method: 'POST', data })
+export const put = (path, data) => request(path, { method: 'PUT', data })
+export const del = (path) => request(path, { method: 'DELETE' })

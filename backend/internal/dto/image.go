@@ -9,11 +9,6 @@ type CreateImageRequest struct {
 	ImageAddress string `json:"image_address" binding:"required"`
 }
 
-type UpdateImageRequest struct {
-	Name         string `json:"name"`
-	ImageAddress string `json:"image_address"`
-}
-
 type ImageResponse struct {
 	ID           uint      `json:"id"`
 	ServerID     uint      `json:"server_id"`

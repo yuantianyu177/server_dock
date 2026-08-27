@@ -2,317 +2,192 @@ package service
 
 import (
 	"errors"
-	"serverdock/internal/dto"
-	"serverdock/internal/model"
-	"serverdock/internal/repository"
 	"strings"
 	"testing"
+
+	"serverdock/internal/dto"
+	"serverdock/internal/model"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func setupAppService(t *testing.T) (*ApplicationService, *MockEmailServiceImpl, *MockDockerService) {
+func setupAppService(t *testing.T) (*ApplicationService, *MockEmailServiceImpl, *MockSSHService) {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("Failed to open test DB: %v", err)
+		t.Fatalf("open test DB: %v", err)
 	}
-	db.AutoMigrate(&model.Server{}, &model.Image{}, &model.Application{}, &model.SystemConfig{})
-
-	serverRepo := repository.NewServerRepo(db)
-	imageRepo := repository.NewImageRepo(db)
-	appRepo := repository.NewApplicationRepo(db)
-	configRepo := repository.NewConfigRepo(db)
+	if err := db.AutoMigrate(&model.Server{}, &model.Image{}, &model.Application{}, &model.SystemConfig{}); err != nil {
+		t.Fatalf("migrate test DB: %v", err)
+	}
 
 	mockSSH := &MockSSHService{}
-	mockDocker := &MockDockerService{}
 	mockEmail := &MockEmailServiceImpl{}
+	servers := NewServerService(db, mockSSH.TestConnection, mockSSH.ExecuteCommand, testEncryptKey)
+	containers := NewContainerService(servers)
+	config := NewConfigService(db)
+	if err := config.EnsureDefaults(); err != nil {
+		t.Fatalf("create default config: %v", err)
+	}
+	service := NewApplicationService(db, servers, containers, config, mockEmail.SendAsync)
 
-	serverSvc := NewServerService(serverRepo, mockSSH, testEncryptKey)
-	containerSvc := NewContainerService(serverSvc, mockDocker, mockSSH)
-	configSvc := NewConfigService(configRepo)
-	configSvc.EnsureDefaults()
-
-	appSvc := NewApplicationService(appRepo, imageRepo, serverSvc, containerSvc, configSvc, mockEmail)
-
-	// Create test server and image
-	serverSvc.Create(&dto.CreateServerRequest{
+	if _, err := servers.Create(&dto.CreateServerRequest{
 		Host: "GPU Server", Hostname: "10.0.0.1", User: "root", AuthType: "password", Credential: "pass",
-	})
-	imageRepo.Create(&model.Image{ServerID: 1, DockerImageID: "sha256:abc", Name: "Ubuntu CUDA", ImageAddress: "nvidia/cuda:12.0"})
-
-	return appSvc, mockEmail, mockDocker
+	}); err != nil {
+		t.Fatalf("create test server: %v", err)
+	}
+	if err := db.Create(&model.Image{
+		ServerID: 1, DockerImageID: "sha256:abc", Name: "Ubuntu CUDA", ImageAddress: "nvidia/cuda:12.0",
+	}).Error; err != nil {
+		t.Fatalf("create test image: %v", err)
+	}
+	return service, mockEmail, mockSSH
 }
 
-func TestApplicationService_Submit(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	resp, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang San", ApplicantEmail: "zhang@example.com",
-		ServerID: 1, ImageID: 1,
+func submitTestApplication(t *testing.T, service *ApplicationService) *dto.ApplicationResponse {
+	t.Helper()
+	response, err := service.Submit(&dto.SubmitApplicationRequest{
+		ApplicantName: "Zhang San", ApplicantEmail: "zhang@example.com", ServerID: 1, ImageID: 1,
 	})
 	if err != nil {
-		t.Fatalf("Submit failed: %v", err)
+		t.Fatalf("submit application: %v", err)
 	}
-	if resp.Status != "pending" {
-		t.Fatalf("Expected 'pending', got %s", resp.Status)
-	}
-	if resp.ServerHost != "GPU Server" {
-		t.Fatalf("Expected 'GPU Server', got %s", resp.ServerHost)
+	return response
+}
+
+func TestApplicationServiceSubmit(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	response := submitTestApplication(t, service)
+	if response.Status != "pending" || response.ServerHost != "GPU Server" {
+		t.Fatalf("unexpected response: %+v", response)
 	}
 }
 
-func TestApplicationService_SubmitSendsAdminEmailWithImageName(t *testing.T) {
-	svc, mockEmail, _ := setupAppService(t)
-	if err := svc.configService.Set("admin_email", "admin@example.com"); err != nil {
-		t.Fatalf("failed to save config: %v", err)
+func TestApplicationServiceSubmitNotifiesAdmin(t *testing.T) {
+	service, email, _ := setupAppService(t)
+	if err := service.configService.Set("admin_email", "admin@example.com"); err != nil {
+		t.Fatal(err)
 	}
+	submitTestApplication(t, service)
 
-	_, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang San", ApplicantEmail: "zhang@example.com",
-		ServerID: 1, ImageID: 1,
-	})
-	if err != nil {
-		t.Fatalf("Submit failed: %v", err)
+	if email.AsyncCalls != 1 {
+		t.Fatalf("expected one email, got %d", email.AsyncCalls)
 	}
-
-	if mockEmail.AsyncCalls != 1 {
-		t.Fatalf("expected submit email to be sent asynchronously, got %d async calls", mockEmail.AsyncCalls)
-	}
-	if got := mockEmail.SentEmails[0].Subject; got != "[Server Dock]" {
-		t.Fatalf("expected submit email subject [Server Dock], got %q", got)
-	}
-	body := mockEmail.SentEmails[0].Body
-	for _, expected := range []string{"Ubuntu CUDA", "GPU Server", "zhang@example.com"} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("expected admin email to contain %q, got %q", expected, body)
+	for _, value := range []string{"Ubuntu CUDA", "GPU Server", "zhang@example.com"} {
+		if !strings.Contains(email.SentEmails[0].Body, value) {
+			t.Fatalf("email does not contain %q", value)
 		}
 	}
 }
 
-func TestApplicationService_SubmitInvalidServer(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	_, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Test", ApplicantEmail: "t@t.com",
-		ServerID: 999, ImageID: 1,
-	})
-	if err == nil {
-		t.Fatal("Expected error for invalid server")
-	}
-}
-
-func TestApplicationService_SubmitImageServerMismatch(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	// Image 1 belongs to server 1, try with server 2 (doesn't exist but image check happens after)
-	_, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Test", ApplicantEmail: "t@t.com",
-		ServerID: 999, ImageID: 1,
-	})
-	if err == nil {
-		t.Fatal("Expected error")
-	}
-}
-
-func TestApplicationService_ListAndGet(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "A", ApplicantEmail: "a@a.com", ServerID: 1, ImageID: 1,
-	})
-	svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "B", ApplicantEmail: "b@b.com", ServerID: 1, ImageID: 1,
-	})
-
-	list, _ := svc.List("")
-	if len(list) != 2 {
-		t.Fatalf("Expected 2, got %d", len(list))
+func TestApplicationServiceSubmitRejectsInvalidSelection(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	if _, err := service.Submit(&dto.SubmitApplicationRequest{
+		ApplicantName: "Test", ApplicantEmail: "test@example.com", ServerID: 999, ImageID: 1,
+	}); err == nil {
+		t.Fatal("expected invalid server error")
 	}
 
-	pending, _ := svc.List("pending")
-	if len(pending) != 2 {
-		t.Fatalf("Expected 2 pending, got %d", len(pending))
-	}
-
-	got, _ := svc.GetByID(1)
-	if got.ApplicantName != "A" {
-		t.Fatalf("Expected 'A', got %s", got.ApplicantName)
-	}
-}
-
-func TestApplicationService_Reject(t *testing.T) {
-	svc, mockEmail, _ := setupAppService(t)
-
-	svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang", ApplicantEmail: "z@z.com", ServerID: 1, ImageID: 1,
+	server, err := service.serverService.Create(&dto.CreateServerRequest{
+		Host: "Other", Hostname: "10.0.0.2", User: "root", AuthType: "password", Credential: "pass",
 	})
-
-	resp, err := svc.Reject(1, "Not enough resources")
 	if err != nil {
-		t.Fatalf("Reject failed: %v", err)
+		t.Fatal(err)
 	}
-	if resp.Status != "rejected" {
-		t.Fatalf("Expected 'rejected', got %s", resp.Status)
+	if _, err := service.Submit(&dto.SubmitApplicationRequest{
+		ApplicantName: "Test", ApplicantEmail: "test@example.com", ServerID: server.ID, ImageID: 1,
+	}); err == nil {
+		t.Fatal("expected image/server mismatch error")
 	}
+}
 
-	// Should have sent rejection email
-	found := false
-	for _, e := range mockEmail.SentEmails {
-		if e.Subject == "[Server Dock]" {
-			found = true
+func TestApplicationServiceList(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	submitTestApplication(t, service)
+	if _, err := service.Submit(&dto.SubmitApplicationRequest{
+		ApplicantName: "Li Si", ApplicantEmail: "li@example.com", ServerID: 1, ImageID: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	applications, err := service.List()
+	if err != nil || len(applications) != 2 {
+		t.Fatalf("expected two applications, got %d (%v)", len(applications), err)
+	}
+	if applications[0].ServerHost != "GPU Server" || applications[0].ImageName != "Ubuntu CUDA" {
+		t.Fatalf("missing joined details: %+v", applications[0])
+	}
+}
+
+func TestApplicationServiceReject(t *testing.T) {
+	service, email, _ := setupAppService(t)
+	application := submitTestApplication(t, service)
+	response, err := service.Reject(application.ID, "Not enough resources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "rejected" || email.AsyncCalls != 1 {
+		t.Fatalf("unexpected rejection result: %+v, emails=%d", response, email.AsyncCalls)
+	}
+	if _, err := service.Reject(application.ID, "again"); !errors.Is(err, ErrApplicationNotPending) {
+		t.Fatalf("expected ErrApplicationNotPending, got %v", err)
+	}
+}
+
+func TestApplicationServiceApprove(t *testing.T) {
+	service, email, ssh := setupAppService(t)
+	var runCommand string
+	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
+		if strings.HasPrefix(command, "docker run ") {
+			runCommand = command
 		}
-	}
-	if !found {
-		t.Error("Expected rejection email to be sent")
-	}
-	if mockEmail.AsyncCalls == 0 {
-		t.Fatal("expected rejection email to be sent asynchronously")
-	}
-}
-
-func TestApplicationService_RejectNotPending(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "A", ApplicantEmail: "a@a.com", ServerID: 1, ImageID: 1,
-	})
-	svc.Reject(1, "no")
-
-	_, err := svc.Reject(1, "again")
-	if err == nil {
-		t.Fatal("Expected error for non-pending application")
-	}
-}
-
-func TestApplicationService_Approve(t *testing.T) {
-	svc, mockEmail, mockDocker := setupAppService(t)
-	var createCmd string
-	mockDocker.CreateContainerFn = func(cmd string) (string, error) {
-		createCmd = cmd
 		return "created", nil
 	}
-	if err := svc.configService.Set("docker_extra_args", "--gpus all\n--shm-size=8g"); err != nil {
-		t.Fatalf("failed to save config: %v", err)
+	if err := service.configService.Set("docker_extra_args", "--gpus all\n--shm-size=8g"); err != nil {
+		t.Fatal(err)
 	}
+	application := submitTestApplication(t, service)
 
-	_, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang", ApplicantEmail: "z@z.com", ServerID: 1, ImageID: 1,
-	})
+	response, err := service.Approve(application.ID, "Approved for testing")
 	if err != nil {
-		t.Fatalf("Submit failed: %v", err)
+		t.Fatal(err)
 	}
-
-	resp, err := svc.Approve(1, "Approved for testing")
-	if err != nil {
-		t.Fatalf("Approve failed: %v", err)
+	if response.Status != "approved" || response.AdminNotes != "Approved for testing" || email.AsyncCalls != 1 {
+		t.Fatalf("unexpected approval result: %+v, emails=%d", response, email.AsyncCalls)
 	}
-	if resp.Status != "approved" {
-		t.Fatalf("Expected 'approved', got %s", resp.Status)
+	if strings.ContainsAny(runCommand, "\r\n") {
+		t.Fatalf("docker command should be one line: %q", runCommand)
 	}
-	if resp.AdminNotes != "Approved for testing" {
-		t.Fatalf("Expected admin notes to be persisted, got %q", resp.AdminNotes)
-	}
-
-	found := false
-	for _, e := range mockEmail.SentEmails {
-		if e.Subject == "[Server Dock]" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("Expected approval email to be sent")
-	}
-	if mockEmail.AsyncCalls == 0 {
-		t.Fatal("expected approval email to be sent asynchronously")
-	}
-	if strings.Contains(createCmd, "\n") || strings.Contains(createCmd, "\r") {
-		t.Fatalf("expected docker command to be single-line, got %q", createCmd)
-	}
-	for _, part := range []string{"--gpus all", "--shm-size=8g", "nvidia/cuda:12.0"} {
-		if !strings.Contains(createCmd, part) {
-			t.Fatalf("expected docker command to contain %q, got %q", part, createCmd)
+	for _, value := range []string{"--gpus all", "--shm-size=8g", "nvidia/cuda:12.0"} {
+		if !strings.Contains(runCommand, value) {
+			t.Fatalf("docker command does not contain %q: %s", value, runCommand)
 		}
 	}
 }
 
-func TestApplicationService_ApproveContainerFailure(t *testing.T) {
-	svc, _, mockDocker := setupAppService(t)
-	mockDocker.CreateContainerFn = func(cmd string) (string, error) {
-		return "", errors.New("docker daemon unavailable")
+func TestApplicationServiceApproveContainerFailure(t *testing.T) {
+	service, _, ssh := setupAppService(t)
+	ssh.ExecuteCommandFn = func(_ string, _ int, _, _, _, command string) (string, error) {
+		if strings.HasPrefix(command, "docker run ") {
+			return "", errors.New("docker daemon unavailable")
+		}
+		return "", nil
 	}
-
-	_, err := svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang", ApplicantEmail: "z@z.com", ServerID: 1, ImageID: 1,
-	})
-	if err != nil {
-		t.Fatalf("Submit failed: %v", err)
-	}
-
-	_, err = svc.Approve(1, "")
-	if err == nil {
-		t.Fatal("Expected approval to fail")
-	}
-	if !errors.Is(err, ErrContainerProvisioning) {
-		t.Fatalf("Expected ErrContainerProvisioning, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "docker daemon unavailable") {
-		t.Fatalf("Expected detailed container error, got %v", err)
+	application := submitTestApplication(t, service)
+	_, err := service.Approve(application.ID, "")
+	if !errors.Is(err, ErrContainerProvisioning) || !strings.Contains(err.Error(), "docker daemon unavailable") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestApplicationService_ApproveEmptyImageAddress(t *testing.T) {
-	svc, _, _ := setupAppService(t)
-
-	img, err := svc.imageRepo.FindByID(1)
-	if err != nil {
-		t.Fatalf("failed to load image: %v", err)
+func TestApplicationServiceApproveRejectsEmptyImageAddress(t *testing.T) {
+	service, _, _ := setupAppService(t)
+	if err := service.db.Model(&model.Image{}).Where("id = ?", 1).Update("image_address", "").Error; err != nil {
+		t.Fatal(err)
 	}
-	img.ImageAddress = ""
-	if err := svc.imageRepo.Update(img); err != nil {
-		t.Fatalf("failed to update image: %v", err)
-	}
-
-	_, err = svc.Submit(&dto.SubmitApplicationRequest{
-		ApplicantName: "Zhang", ApplicantEmail: "z@z.com", ServerID: 1, ImageID: 1,
-	})
-	if err != nil {
-		t.Fatalf("Submit failed: %v", err)
-	}
-
-	_, err = svc.Approve(1, "")
-	if err == nil {
-		t.Fatal("Expected approval to fail for empty image address")
-	}
-	if !errors.Is(err, ErrContainerProvisioning) {
-		t.Fatalf("Expected ErrContainerProvisioning, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "empty image address") {
-		t.Fatalf("Expected empty image address error, got %v", err)
-	}
-}
-
-func TestGenerateContainerName(t *testing.T) {
-	name := GenerateContainerName("Zhang San")
-	if !strings.HasPrefix(name, "zhangsan-") {
-		t.Fatalf("Expected name to start with 'zhangsan-', got %s", name)
-	}
-	// Should have timestamp suffix
-	if len(name) != len("zhangsan-20060102150405") {
-		t.Fatalf("Expected longer name with timestamp, got %s", name)
-	}
-}
-
-func TestGenerateContainerNameChinese(t *testing.T) {
-	name := GenerateContainerName("张三")
-	if !strings.HasPrefix(name, "zhangsan-") {
-		t.Fatalf("Expected 'zhangsan-' prefix for Chinese name, got %s", name)
-	}
-}
-
-func TestGenerateContainerNameFallback(t *testing.T) {
-	name := GenerateContainerName("!!!")
-	if !strings.HasPrefix(name, "container-") {
-		t.Fatalf("Expected 'container-' prefix for unsupported chars, got %s", name)
+	application := submitTestApplication(t, service)
+	_, err := service.Approve(application.ID, "")
+	if !errors.Is(err, ErrContainerProvisioning) || !strings.Contains(err.Error(), "empty image address") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

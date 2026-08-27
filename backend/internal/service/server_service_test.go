@@ -4,7 +4,6 @@ import (
 	"errors"
 	"serverdock/internal/dto"
 	"serverdock/internal/model"
-	"serverdock/internal/repository"
 	"testing"
 
 	"gorm.io/driver/sqlite"
@@ -13,8 +12,8 @@ import (
 
 // MockSSHService for testing
 type MockSSHService struct {
-	TestConnectionFn  func(hostname string, port int, user, authType, credential string) error
-	ExecuteCommandFn  func(hostname string, port int, user, authType, credential string, command string) (string, error)
+	TestConnectionFn func(hostname string, port int, user, authType, credential string) error
+	ExecuteCommandFn func(hostname string, port int, user, authType, credential string, command string) (string, error)
 }
 
 func (m *MockSSHService) TestConnection(hostname string, port int, user, authType, credential string) error {
@@ -44,9 +43,8 @@ func setupServerTestDB(t *testing.T) *gorm.DB {
 
 func setupServerService(t *testing.T) (*ServerService, *MockSSHService) {
 	db := setupServerTestDB(t)
-	repo := repository.NewServerRepo(db)
 	mockSSH := &MockSSHService{}
-	svc := NewServerService(repo, mockSSH, testEncryptKey)
+	svc := NewServerService(db, mockSSH.TestConnection, mockSSH.ExecuteCommand, testEncryptKey)
 	return svc, mockSSH
 }
 
@@ -69,9 +67,9 @@ func TestServerService_CreateAndGet(t *testing.T) {
 	}
 
 	// Verify credential is encrypted at rest (not plaintext)
-	raw, err := svc.GetRawByID(resp.ID)
+	raw, err := svc.find(resp.ID)
 	if err != nil {
-		t.Fatalf("GetRawByID failed: %v", err)
+		t.Fatalf("find failed: %v", err)
 	}
 	if raw.Credential == "mypassword" {
 		t.Fatal("Credential should be encrypted")

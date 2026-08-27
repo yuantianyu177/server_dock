@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderApprovalEmail(t *testing.T) {
-	html := RenderApprovalEmail("Zhang San", "gpu01.example.com", 20000, []int{20001, 20002}, "abc123", "Approved for research")
+	html := renderApprovalEmail("Zhang San", "gpu01.example.com", 20000, []int{20001, 20002}, "abc123", "Approved for research")
 
 	checks := []string{"Container Application Approved", "Zhang San", "gpu01.example.com", "root", "20000", "abc123", "20001-20002", "Approved for research"}
 	for _, c := range checks {
@@ -17,7 +17,7 @@ func TestRenderApprovalEmail(t *testing.T) {
 }
 
 func TestRenderApprovalEmailEscapesAdminNotes(t *testing.T) {
-	html := RenderApprovalEmail("Zhang San", "gpu01.example.com", 20000, []int{20001}, "abc123", "<script>alert(1)</script>")
+	html := renderApprovalEmail("Zhang San", "gpu01.example.com", 20000, []int{20001}, "abc123", "<script>alert(1)</script>")
 
 	if strings.Contains(html, "<script>alert(1)</script>") {
 		t.Fatal("expected admin notes to be escaped")
@@ -28,7 +28,7 @@ func TestRenderApprovalEmailEscapesAdminNotes(t *testing.T) {
 }
 
 func TestRenderRejectionEmail(t *testing.T) {
-	html := RenderRejectionEmail("Li Si", "GPU Server 01", "Ubuntu 22.04", "Insufficient resources")
+	html := renderRejectionEmail("Li Si", "GPU Server 01", "Ubuntu 22.04", "Insufficient resources")
 	htmlLower := strings.ToLower(html)
 
 	checks := []string{"Container Application Rejected", "Li Si", "GPU Server 01", "Ubuntu 22.04", "Insufficient resources", "could not be approved"}
@@ -40,7 +40,7 @@ func TestRenderRejectionEmail(t *testing.T) {
 }
 
 func TestRenderNewApplicationEmail(t *testing.T) {
-	html := RenderNewApplicationEmail("Wang Wu", "wang@example.com", "GPU Server 01", "Ubuntu CUDA")
+	html := renderNewApplicationEmail("Wang Wu", "wang@example.com", "GPU Server 01", "Ubuntu CUDA")
 
 	checks := []string{"New Container Application", "Wang Wu", "wang@example.com", "GPU Server 01", "Ubuntu CUDA"}
 	for _, c := range checks {
@@ -53,9 +53,7 @@ func TestRenderNewApplicationEmail(t *testing.T) {
 	}
 }
 
-// MockEmailService for testing
 type MockEmailServiceImpl struct {
-	SendCalls  int
 	AsyncCalls int
 	SentEmails []struct {
 		To      string
@@ -71,26 +69,4 @@ func (m *MockEmailServiceImpl) SendAsync(to, subject, htmlBody string) {
 		Subject string
 		Body    string
 	}{to, subject, htmlBody})
-}
-
-func (m *MockEmailServiceImpl) Send(to, subject, htmlBody string) error {
-	m.SendCalls++
-	m.SentEmails = append(m.SentEmails, struct {
-		To      string
-		Subject string
-		Body    string
-	}{to, subject, htmlBody})
-	return nil
-}
-
-func TestMockEmailService(t *testing.T) {
-	mock := &MockEmailServiceImpl{}
-	mock.SendAsync("test@example.com", "Test Subject", "<p>Hello</p>")
-
-	if len(mock.SentEmails) != 1 {
-		t.Fatalf("Expected 1 email, got %d", len(mock.SentEmails))
-	}
-	if mock.SentEmails[0].To != "test@example.com" {
-		t.Fatalf("Expected 'test@example.com', got %s", mock.SentEmails[0].To)
-	}
 }

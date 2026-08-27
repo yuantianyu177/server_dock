@@ -2,8 +2,6 @@ package service
 
 import (
 	"serverdock/internal/model"
-	"serverdock/internal/pkg"
-	"serverdock/internal/repository"
 	"testing"
 
 	"gorm.io/driver/sqlite"
@@ -21,8 +19,7 @@ func setupAuthTestDB(t *testing.T) *gorm.DB {
 
 func setupAuthService(t *testing.T) (*AuthService, *gorm.DB) {
 	db := setupAuthTestDB(t)
-	repo := repository.NewAdminRepo(db)
-	svc := NewAuthService(repo, "test-secret-key-for-jwt-signing")
+	svc := NewAuthService(db, "test-secret-key-for-jwt-signing")
 	return svc, db
 }
 
@@ -113,8 +110,7 @@ func TestAuthService_ValidateTokenWrongKey(t *testing.T) {
 
 	// Different secret key
 	db := setupAuthTestDB(t)
-	repo := repository.NewAdminRepo(db)
-	svc2 := NewAuthService(repo, "different-secret-key-here!!!!!")
+	svc2 := NewAuthService(db, "different-secret-key-here!!!!!")
 
 	_, _, err := svc2.ValidateToken(token)
 	if err == nil {
@@ -150,9 +146,6 @@ func TestAuthService_ChangePassword(t *testing.T) {
 func TestAuthService_ChangePasswordWrongOld(t *testing.T) {
 	svc, _ := setupAuthService(t)
 	svc.EnsureDefaultAdmin("admin", "admin123")
-
-	hash, _ := pkg.HashPassword("admin123")
-	_ = hash
 
 	token, _ := svc.Login("admin", "admin123")
 	adminID, _, _ := svc.ValidateToken(token)

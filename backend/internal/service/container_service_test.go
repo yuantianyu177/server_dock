@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -25,32 +26,13 @@ func TestValidateContainerName(t *testing.T) {
 	}
 }
 
-func TestValidateDockerCommand(t *testing.T) {
-	tests := []struct {
-		cmd   string
-		valid bool
-	}{
-		{"docker ps", true},
-		{"docker exec my-container ls", true},
-		{"  docker images", true},
-		{"rm -rf /", false},
-		{"ls -la", false},
-		{"", false},
-	}
-	for _, tt := range tests {
-		if got := ValidateDockerCommand(tt.cmd); got != tt.valid {
-			t.Errorf("ValidateDockerCommand(%q) = %v, want %v", tt.cmd, got, tt.valid)
-		}
-	}
-}
-
 func TestParseUsedPorts(t *testing.T) {
 	output := `State  Recv-Q Send-Q Local Address:Port  Peer Address:Port
 LISTEN 0      128    0.0.0.0:22    0.0.0.0:*
 LISTEN 0      128    0.0.0.0:80    0.0.0.0:*
 LISTEN 0      128    [::]:443      [::]:*`
 
-	ports := ParseUsedPorts(output)
+	ports := parseUsedPorts(output)
 	if !ports[22] {
 		t.Error("Expected port 22 to be used")
 	}
@@ -69,7 +51,7 @@ func TestParseDockerPorts(t *testing.T) {
 	output := `0.0.0.0:20000->22/tcp, 0.0.0.0:20001->20001/tcp
 0.0.0.0:20010->22/tcp`
 
-	ports := ParseDockerPorts(output)
+	ports := parseDockerPorts(output)
 	if !ports[20000] {
 		t.Error("Expected port 20000")
 	}
@@ -84,7 +66,7 @@ func TestParseDockerPorts(t *testing.T) {
 func TestAllocatePorts(t *testing.T) {
 	used := map[int]bool{20000: true, 20001: true}
 
-	ports, err := AllocatePorts(used, 20000, 20010, 3)
+	ports, err := allocatePorts(used, 20000, 20010, 3)
 	if err != nil {
 		t.Fatalf("AllocatePorts failed: %v", err)
 	}
@@ -103,14 +85,14 @@ func TestAllocatePortsNotEnough(t *testing.T) {
 		used[i] = true
 	}
 
-	_, err := AllocatePorts(used, 20000, 20005, 1)
+	_, err := allocatePorts(used, 20000, 20005, 1)
 	if err == nil {
 		t.Fatal("Expected error when no ports available")
 	}
 }
 
 func TestBuildDockerRunCommand(t *testing.T) {
-	cmd := BuildDockerRunCommand("mycontainer", "ubuntu:22.04", 20000, []int{20001, 20002}, "myvolume", "/data", "--gpus all")
+	cmd := buildDockerRunCommand("mycontainer", "ubuntu:22.04", 20000, []int{20001, 20002}, "myvolume", "/data", "--gpus all")
 
 	expected := []string{
 		"docker run -d",
@@ -125,14 +107,14 @@ func TestBuildDockerRunCommand(t *testing.T) {
 	}
 
 	for _, part := range expected {
-		if !contains(cmd, part) {
+		if !strings.Contains(cmd, part) {
 			t.Errorf("Command missing %q: %s", part, cmd)
 		}
 	}
 }
 
 func TestBuildDockerRunCommand_NormalizesMultilineExtraArgs(t *testing.T) {
-	cmd := BuildDockerRunCommand(
+	cmd := buildDockerRunCommand(
 		"mycontainer",
 		"ubuntu:22.04",
 		20000,
@@ -142,25 +124,12 @@ func TestBuildDockerRunCommand_NormalizesMultilineExtraArgs(t *testing.T) {
 		"\n  --gpus all\r\n--shm-size=8g  \n\n",
 	)
 
-	if contains(cmd, "\n") || contains(cmd, "\r") {
+	if strings.Contains(cmd, "\n") || strings.Contains(cmd, "\r") {
 		t.Fatalf("expected normalized command without newlines, got %q", cmd)
 	}
 	for _, part := range []string{"--gpus all", "--shm-size=8g", "ubuntu:22.04"} {
-		if !contains(cmd, part) {
+		if !strings.Contains(cmd, part) {
 			t.Errorf("Command missing %q: %s", part, cmd)
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && containsStr(s, substr)
-}
-
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

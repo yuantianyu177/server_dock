@@ -1,14 +1,11 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { serversApi } from '@/api/servers'
-import { imagesApi } from '@/api/images'
-import { containersApi } from '@/api/containers'
+import { get, post } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import StatusBadge from '@/components/StatusBadge.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import ServerSelect from '@/components/ServerSelect.vue'
 import { formatIPv4Ports } from '@/utils/docker'
 
 const route = useRoute()
@@ -38,7 +35,7 @@ const actionLoading = ref(false)
 async function loadServers() {
   serversLoading.value = true
   try {
-    servers.value = await serversApi.list() || []
+    servers.value = await get('/servers') || []
     const queryId = route.query.server ? Number(route.query.server) : null
     if (queryId && servers.value.find(s => s.id === queryId)) {
       selectedServerId.value = queryId
@@ -56,7 +53,7 @@ async function loadContainers() {
   if (!selectedServerId.value) return
   containersLoading.value = true
   try {
-    containers.value = await containersApi.list(selectedServerId.value) || []
+    containers.value = await get(`/servers/${selectedServerId.value}/containers`) || []
   } catch (e) {
     toast.error(e.message)
   } finally {
@@ -71,7 +68,7 @@ async function loadAvailableImages() {
   }
   availableImagesLoading.value = true
   try {
-    availableImages.value = await imagesApi.list(selectedServerId.value) || []
+    availableImages.value = await get('/images', { server_id: selectedServerId.value }) || []
   } catch (e) {
     availableImages.value = []
     formError.value = e.message
@@ -98,7 +95,7 @@ async function containerAction(container, action) {
 async function doContainerAction(container, action) {
   actionLoading.value = true
   try {
-    await containersApi.action(selectedServerId.value, container.name, action)
+    await post(`/servers/${selectedServerId.value}/containers/${encodeURIComponent(container.name)}/action`, { action })
     toast.success(`Container ${action}ed successfully`)
     loadContainers()
   } catch (e) {
@@ -114,7 +111,7 @@ async function showLogs(container) {
   logsContent.value = ''
   logsLoading.value = true
   try {
-    const res = await containersApi.logs(selectedServerId.value, container.name)
+    const res = await get(`/servers/${selectedServerId.value}/containers/${encodeURIComponent(container.name)}/logs`, { tail: 200 })
     logsContent.value = res?.logs || res || '(no logs)'
   } catch (e) {
     logsContent.value = e.message
@@ -127,7 +124,7 @@ async function createContainer() {
   formLoading.value = true
   formError.value = ''
   try {
-    await containersApi.create(selectedServerId.value, containerForm.value)
+    await post(`/servers/${selectedServerId.value}/containers`, containerForm.value)
     createModal.value = false
     containerForm.value = { name: '', image: '' }
     toast.success('Container created successfully')
@@ -149,13 +146,7 @@ watch(selectedServerId, (id) => {
   loadContainers()
   loadAvailableImages()
 })
-onMounted(async () => {
-  await loadServers()
-  if (selectedServerId.value) {
-    loadContainers()
-    loadAvailableImages()
-  }
-})
+onMounted(loadServers)
 </script>
 
 <template>
@@ -166,11 +157,9 @@ onMounted(async () => {
         <p class="page-subtitle">Manage Docker containers across all servers</p>
       </div>
       <div class="header-actions">
-        <ServerSelect
-          v-if="servers.length > 0"
-          v-model="selectedServerId"
-          :servers="servers"
-        />
+        <select v-if="servers.length > 0" v-model.number="selectedServerId" class="form-select server-filter">
+          <option v-for="server in servers" :key="server.id" :value="server.id">{{ server.host }}</option>
+        </select>
         <button class="btn btn-primary btn-w-action" @click="openCreateModal" :disabled="!selectedServerId">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add Container

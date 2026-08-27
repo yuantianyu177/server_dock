@@ -1,11 +1,9 @@
 <script setup>
 import { useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { auth } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
-const auth = useAuthStore()
-
 const navItems = [
   {
     name: 'Servers',

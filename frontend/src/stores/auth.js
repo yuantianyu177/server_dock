@@ -1,36 +1,35 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { authApi } from '@/api/auth'
+import { reactive } from 'vue'
+import { get, post } from '@/api/client'
 
-export const useAuthStore = defineStore('auth', () => {
-  const token = ref(localStorage.getItem('token') || '')
-  const user = ref(null)
-
-  const isAuthenticated = computed(() => !!token.value)
-
-  function setToken(t) {
-    token.value = t
-    localStorage.setItem('token', t)
-  }
-
-  async function login(username, password) {
-    const res = await authApi.login(username, password)
-    setToken(res.token)
-    user.value = { username }
-    return res
-  }
-
-  async function fetchMe() {
-    const res = await authApi.me()
-    user.value = res
-    return res
-  }
-
-  function logout() {
-    token.value = ''
-    user.value = null
-    localStorage.removeItem('token')
-  }
-
-  return { token, user, isAuthenticated, login, logout, fetchMe }
+const state = reactive({
+  token: localStorage.getItem('token') || '',
+  user: null
 })
+
+async function login(username, password) {
+  const response = await post('/auth/login', { username, password })
+  state.token = response.token
+  localStorage.setItem('token', response.token)
+  state.user = { username }
+  return response
+}
+
+async function fetchMe() {
+  state.user = await get('/auth/me')
+  return state.user
+}
+
+function logout() {
+  state.token = ''
+  state.user = null
+  localStorage.removeItem('token')
+}
+
+export const auth = {
+  get token() { return state.token },
+  get user() { return state.user },
+  get isAuthenticated() { return Boolean(state.token) },
+  login,
+  logout,
+  fetchMe
+}

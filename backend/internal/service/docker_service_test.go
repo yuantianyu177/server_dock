@@ -6,7 +6,7 @@ import (
 
 func TestParseDockerImages(t *testing.T) {
 	output := "ubuntu\t22.04\tabc123\t77.8MB\t2 weeks ago\nnginx\tlatest\tdef456\t142MB\t3 days ago"
-	images := ParseDockerImages(output)
+	images := parseDockerImages(output)
 
 	if len(images) != 2 {
 		t.Fatalf("Expected 2 images, got %d", len(images))
@@ -23,7 +23,7 @@ func TestParseDockerImages(t *testing.T) {
 }
 
 func TestParseDockerImagesEmpty(t *testing.T) {
-	images := ParseDockerImages("")
+	images := parseDockerImages("")
 	if len(images) != 0 {
 		t.Fatalf("Expected 0, got %d", len(images))
 	}
@@ -31,7 +31,7 @@ func TestParseDockerImagesEmpty(t *testing.T) {
 
 func TestParseDockerContainers(t *testing.T) {
 	output := "mycontainer\tubuntu:22.04\tUp 2 hours\t0.0.0.0:20000->22/tcp\tabc123"
-	containers := ParseDockerContainers(output)
+	containers := parseDockerContainers(output)
 
 	if len(containers) != 1 {
 		t.Fatalf("Expected 1, got %d", len(containers))
@@ -43,7 +43,7 @@ func TestParseDockerContainers(t *testing.T) {
 
 func TestParseDockerVolumes(t *testing.T) {
 	output := "myvolume\tlocal\t/var/lib/docker/volumes/myvolume/_data"
-	volumes := ParseDockerVolumes(output)
+	volumes := parseDockerVolumes(output)
 
 	if len(volumes) != 1 {
 		t.Fatalf("Expected 1, got %d", len(volumes))

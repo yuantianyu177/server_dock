@@ -5,29 +5,24 @@ import (
 	"net/http"
 
 	"serverdock/internal/dto"
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-type ApplicationHandler struct {
-	appService *service.ApplicationService
-}
+type ApplicationHandler struct{ service *service.ApplicationService }
 
-func NewApplicationHandler(appService *service.ApplicationService) *ApplicationHandler {
-	return &ApplicationHandler{appService: appService}
+func NewApplicationHandler(applicationService *service.ApplicationService) *ApplicationHandler {
+	return &ApplicationHandler{service: applicationService}
 }
-
-// Public endpoints
 
 func (h *ApplicationHandler) PublicListServers(c *gin.Context) {
-	servers, err := h.appService.ListPublicServers()
+	servers, err := h.service.ListPublicServers()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(servers))
+	c.JSON(http.StatusOK, servers)
 }
 
 func (h *ApplicationHandler) PublicListImages(c *gin.Context) {
@@ -35,54 +30,35 @@ func (h *ApplicationHandler) PublicListImages(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	images, err := h.appService.ListPublicImages(id)
+	images, err := h.service.ListPublicImages(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(images))
+	c.JSON(http.StatusOK, images)
 }
 
 func (h *ApplicationHandler) PublicSubmit(c *gin.Context) {
-	var req dto.SubmitApplicationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	var request dto.SubmitApplicationRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-
-	resp, err := h.appService.Submit(&req)
+	response, err := h.service.Submit(&request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(resp))
+	c.JSON(http.StatusOK, response)
 }
-
-// Admin endpoints
 
 func (h *ApplicationHandler) List(c *gin.Context) {
-	status := c.Query("status")
-	apps, err := h.appService.List(status)
+	applications, err := h.service.List()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(apps))
-}
-
-func (h *ApplicationHandler) Get(c *gin.Context) {
-	id, ok := parseUintParam(c, "id")
-	if !ok {
-		return
-	}
-
-	resp, err := h.appService.GetByID(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, pkg.ErrorResponse(404, err.Error()))
-		return
-	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(resp))
+	c.JSON(http.StatusOK, applications)
 }
 
 func (h *ApplicationHandler) Action(c *gin.Context) {
@@ -90,34 +66,29 @@ func (h *ApplicationHandler) Action(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	var req dto.ApplicationActionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	var request dto.ApplicationActionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
 
-	var resp *dto.ApplicationResponse
+	var response *dto.ApplicationResponse
 	var err error
-	switch req.Action {
-	case "approve":
-		resp, err = h.appService.Approve(id, req.AdminNotes)
-	case "reject":
-		resp, err = h.appService.Reject(id, req.AdminNotes)
+	if request.Action == "approve" {
+		response, err = h.service.Approve(id, request.AdminNotes)
+	} else {
+		response, err = h.service.Reject(id, request.AdminNotes)
 	}
-
-	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrApplicationNotFound):
-			c.JSON(http.StatusNotFound, pkg.ErrorResponse(404, err.Error()))
-		case errors.Is(err, service.ErrApplicationNotPending):
-			c.JSON(http.StatusConflict, pkg.ErrorResponse(409, err.Error()))
-		case errors.Is(err, service.ErrContainerProvisioning):
-			c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
-		default:
-			c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
-		}
+	if err == nil {
+		c.JSON(http.StatusOK, response)
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(resp))
+
+	status := http.StatusInternalServerError
+	if errors.Is(err, service.ErrApplicationNotFound) {
+		status = http.StatusNotFound
+	} else if errors.Is(err, service.ErrApplicationNotPending) {
+		status = http.StatusConflict
+	}
+	c.JSON(status, gin.H{"error": err.Error()})
 }

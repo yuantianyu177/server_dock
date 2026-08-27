@@ -2,7 +2,6 @@ package service
 
 import (
 	"serverdock/internal/model"
-	"serverdock/internal/repository"
 	"testing"
 
 	"gorm.io/driver/sqlite"
@@ -15,8 +14,7 @@ func setupConfigService(t *testing.T) *ConfigService {
 		t.Fatalf("Failed to open test DB: %v", err)
 	}
 	db.AutoMigrate(&model.SystemConfig{})
-	repo := repository.NewConfigRepo(db)
-	return NewConfigService(repo)
+	return NewConfigService(db)
 }
 
 func TestConfigService_GetWithDefault(t *testing.T) {
@@ -38,15 +36,6 @@ func TestConfigService_SetAndGet(t *testing.T) {
 	}
 }
 
-func TestConfigService_GetInt(t *testing.T) {
-	svc := setupConfigService(t)
-
-	n := svc.GetInt("port_range_start")
-	if n != 20000 {
-		t.Fatalf("Expected 20000, got %d", n)
-	}
-}
-
 func TestConfigService_EnsureDefaults(t *testing.T) {
 	svc := setupConfigService(t)
 
@@ -54,7 +43,7 @@ func TestConfigService_EnsureDefaults(t *testing.T) {
 		t.Fatalf("EnsureDefaults failed: %v", err)
 	}
 
-	items, _ := svc.List()
+	items, _ := svc.GetAllAsMap()
 	if len(items) < 10 {
 		t.Fatalf("Expected at least 10 config items, got %d", len(items))
 	}

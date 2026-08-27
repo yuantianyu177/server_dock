@@ -1,12 +1,10 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { serversApi } from '@/api/servers'
-import { imagesApi } from '@/api/images'
+import { del, get, post } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import ServerSelect from '@/components/ServerSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,7 +32,7 @@ const deleteTarget = ref(null) // 'db' | 'remote'
 async function loadServers() {
   serversLoading.value = true
   try {
-    servers.value = await serversApi.list() || []
+    servers.value = await get('/servers') || []
     const queryId = route.query.server ? Number(route.query.server) : null
     if (queryId && servers.value.find(s => s.id === queryId)) {
       selectedServerId.value = queryId
@@ -52,7 +50,7 @@ async function loadDbImages() {
   if (!selectedServerId.value) return
   dbImagesLoading.value = true
   try {
-    dbImages.value = await imagesApi.list(selectedServerId.value) || []
+    dbImages.value = await get('/images', { server_id: selectedServerId.value }) || []
   } catch (e) {
     toast.error(e.message)
   } finally {
@@ -64,17 +62,12 @@ async function loadRemoteImages() {
   if (!selectedServerId.value) return
   remoteLoading.value = true
   try {
-    remoteImages.value = await imagesApi.listRemote(selectedServerId.value) || []
+    remoteImages.value = await get(`/servers/${selectedServerId.value}/images`) || []
   } catch (e) {
     toast.error(e.message)
   } finally {
     remoteLoading.value = false
   }
-}
-
-function loadAll() {
-  loadDbImages()
-  loadRemoteImages()
 }
 
 function formatRemoteImageAddress(img) {
@@ -90,7 +83,7 @@ async function saveDbImage() {
     if (!selectedRemoteImage) {
       throw new Error('Please select an image from the server.')
     }
-    await imagesApi.create({
+    await post('/images', {
       server_id: selectedServerId.value,
       name: imageForm.value.name,
       image_id: selectedRemoteImage.image_id,
@@ -115,11 +108,11 @@ function confirmDelete(img, type) {
 async function doDelete() {
   try {
     if (deleteTarget.value === 'db') {
-      await imagesApi.delete(confirmDeleteImage.value.id)
+      await del(`/images/${confirmDeleteImage.value.id}`)
       toast.success('Image removed')
       loadDbImages()
     } else {
-      await imagesApi.deleteRemote(selectedServerId.value, confirmDeleteImage.value.image_id)
+      await del(`/servers/${selectedServerId.value}/images/${encodeURIComponent(confirmDeleteImage.value.image_id)}`)
       toast.success('Image deleted from server')
       loadRemoteImages()
     }
@@ -140,7 +133,7 @@ async function pullImage() {
   }
   pullLoading.value = true
   try {
-    await imagesApi.pull(selectedServerId.value, image, tag)
+    await post(`/servers/${selectedServerId.value}/images/pull`, { image: tag ? `${image}:${tag}` : image })
     pullModal.value = false
     pullForm.value = { image: '', tag: 'latest' }
     toast.success('Image pulled successfully')
@@ -158,12 +151,10 @@ function formatSize(size) {
 
 watch(selectedServerId, (id) => {
   if (id) router.replace({ query: { server: id } })
-  loadAll()
+  loadDbImages()
+  loadRemoteImages()
 })
-onMounted(async () => {
-  await loadServers()
-  if (selectedServerId.value) loadAll()
-})
+onMounted(loadServers)
 </script>
 
 <template>
@@ -174,11 +165,9 @@ onMounted(async () => {
         <p class="page-subtitle">Manage Docker images and registry configurations</p>
       </div>
       <div class="header-actions">
-        <ServerSelect
-          v-if="servers.length > 0"
-          v-model="selectedServerId"
-          :servers="servers"
-        />
+        <select v-if="servers.length > 0" v-model.number="selectedServerId" class="form-select server-filter">
+          <option v-for="server in servers" :key="server.id" :value="server.id">{{ server.host }}</option>
+        </select>
       </div>
     </div>
 

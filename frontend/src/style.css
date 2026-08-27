@@ -11,17 +11,11 @@
   --accent: #C96442;
   --accent-hover: #B85739;
   --accent-light: #F9EDE8;
-  --select-bg: #FBF7F1;
-  --select-bg-hover: #F7F1E8;
-  --select-border: #DDD5C8;
-  --select-border-hover: #CFC2B1;
-  --select-ring: rgba(164, 118, 87, 0.16);
   --text-primary: #1A1917;
   --text-secondary: #6B6762;
   --text-muted: #9B9895;
   --border: #E2DED6;
   --border-light: #EDEAE3;
-  --white: #FFFFFF;
   --success: #2A7A4E;
   --success-bg: #EAF5EE;
   --success-border: #C3E6D0;
@@ -35,9 +29,7 @@
   --info-bg: #EBF3FD;
   --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.06);
-  --shadow: 0 2px 8px rgba(0,0,0,0.08);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
-  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 14px;
@@ -101,15 +93,6 @@ input, textarea, select {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
-}
-
-/* ===== Utility Classes ===== */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0,0,0,0);
 }
 
 /* ===== Base Buttons ===== */
@@ -199,11 +182,6 @@ input, textarea, select {
   font-size: 12.5px;
 }
 
-.btn-lg {
-  padding: 10px 20px;
-  font-size: 15px;
-}
-
 .btn-icon {
   padding: 6px;
   border-radius: var(--radius-sm);
@@ -291,14 +269,14 @@ input, textarea, select {
   color: var(--text-primary);
 }
 
+.server-filter {
+  width: auto;
+  min-width: 150px;
+}
+
 .form-hint {
   font-size: 12px;
   color: var(--text-muted);
-}
-
-.form-error {
-  font-size: 12px;
-  color: var(--danger);
 }
 
 /* ===== Cards ===== */
@@ -308,25 +286,6 @@ input, textarea, select {
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s ease;
-}
-
-.card-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-light);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.card-body {
-  padding: 20px;
 }
 
 /* ===== Tables ===== */
@@ -535,32 +494,10 @@ tbody tr:hover td {
   border-color: var(--success-border);
 }
 
-.alert-info {
-  background: var(--info-bg);
-  color: var(--info);
-  border-color: #BDD8F5;
-}
-
-/* ===== Transitions ===== */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 /* ===== Entrance animations ===== */
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
 }
 
 .animate-in {
@@ -569,26 +506,12 @@ tbody tr:hover td {
 
 .animate-in-delay-1 { animation-delay: 0.04s; }
 .animate-in-delay-2 { animation-delay: 0.08s; }
-.animate-in-delay-3 { animation-delay: 0.12s; }
 
 /* ===== Fixed-width button helpers ===== */
 /* For page-level action buttons: Add Server / Add Container / Add Image / Pull Image */
 .btn-w-action {
   min-width: 132px;
   justify-content: center;
-}
-
-/* For table row action buttons: View / Approve / Reject */
-.btn-w-row {
-  min-width: 70px;
-  justify-content: center;
-}
-
-/* ===== Divider ===== */
-.divider {
-  height: 1px;
-  background: var(--border-light);
-  margin: 4px 0;
 }
 
 /* ===== Code block ===== */
@@ -626,10 +549,6 @@ code {
   tbody td {
     padding: 10px;
     font-size: 13px;
-  }
-
-  .card-body {
-    padding: 14px;
   }
 
   .tabs {

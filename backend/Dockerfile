@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27.0-alpine3.24 AS builder
 
 RUN apk add --no-cache gcc musl-dev
 
@@ -13,7 +13,7 @@ COPY . .
 RUN CGO_ENABLED=1 go build -o serverdock ./cmd/server/
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.24.1
 
 RUN apk add --no-cache ca-certificates sqlite-libs
 

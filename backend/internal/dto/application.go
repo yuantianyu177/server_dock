@@ -29,10 +29,9 @@ type ApplicationResponse struct {
 }
 
 type PublicServerInfo struct {
-	ID             uint   `json:"id"`
-	Host           string `json:"host"`
-	Description    string `json:"description"`
-	ContainerCount int    `json:"container_count"`
+	ID          uint   `json:"id"`
+	Host        string `json:"host"`
+	Description string `json:"description"`
 }
 
 type PublicImageInfo struct {

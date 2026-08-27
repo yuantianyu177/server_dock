@@ -2,134 +2,81 @@ package router
 
 import (
 	"serverdock/internal/handler"
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Services struct {
-	Auth      *service.AuthService
-	Server    *service.ServerService
-	Image     *service.ImageService
-	Container *service.ContainerService
+	Auth        *service.AuthService
+	Server      *service.ServerService
+	Image       *service.ImageService
+	Container   *service.ContainerService
 	Config      *service.ConfigService
-	Email       service.EmailService
 	Application *service.ApplicationService
 	Terminal    *service.TerminalService
+	SendEmail   func(string, string, string) error
 }
 
-// Setup creates and configures the Gin router.
-func Setup(debug bool, svc *Services) *gin.Engine {
+func Setup(debug bool, services *Services) *gin.Engine {
 	if !debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	router := gin.Default()
 
-	r := gin.Default()
+	auth := handler.NewAuthHandler(services.Auth)
+	servers := handler.NewServerHandler(services.Server)
+	images := handler.NewImageHandler(services.Image)
+	containers := handler.NewContainerHandler(services.Container)
+	volumes := handler.NewVolumeHandler(services.Container)
+	config := handler.NewConfigHandler(services.Config, services.SendEmail)
+	applications := handler.NewApplicationHandler(services.Application)
+	terminal := handler.NewTerminalHandler(services.Terminal, services.Auth)
 
-	authHandler := handler.NewAuthHandler(svc.Auth)
-	serverHandler := handler.NewServerHandler(svc.Server)
-	imageHandler := handler.NewImageHandler(svc.Image)
-	containerHandler := handler.NewContainerHandler(svc.Container)
-	volumeHandler := handler.NewVolumeHandler(svc.Container)
-	configHandler := handler.NewConfigHandler(svc.Config, svc.Email)
-	appHandler := handler.NewApplicationHandler(svc.Application)
-	terminalHandler := handler.NewTerminalHandler(svc.Terminal, svc.Auth)
+	api := router.Group("/api")
+	api.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+	api.POST("/auth/login", auth.Login)
 
-	api := r.Group("/api")
-	{
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(200, pkg.SuccessResponse(gin.H{"status": "ok"}))
-		})
+	public := api.Group("/applications/public")
+	public.GET("/servers", applications.PublicListServers)
+	public.GET("/server/:id/images", applications.PublicListImages)
+	public.POST("/apply", applications.PublicSubmit)
 
-		// Auth
-		auth := api.Group("/auth")
-		{
-			auth.POST("/login", authHandler.Login)
-			protected := auth.Group("")
-			protected.Use(handler.AuthMiddleware(svc.Auth))
-			{
-				protected.GET("/me", authHandler.Me)
-				protected.POST("/change-password", authHandler.ChangePassword)
-			}
-		}
+	authed := api.Group("")
+	authed.Use(handler.AuthMiddleware(services.Auth))
+	authed.GET("/auth/me", auth.Me)
+	authed.POST("/auth/change-password", auth.ChangePassword)
 
-		// Public application endpoints
-		appPublic := api.Group("/applications/public")
-		{
-			appPublic.GET("/servers", appHandler.PublicListServers)
-			appPublic.GET("/server/:id/images", appHandler.PublicListImages)
-			appPublic.POST("/apply", appHandler.PublicSubmit)
-		}
+	authed.GET("/servers", servers.List)
+	authed.POST("/servers", servers.Create)
+	authed.GET("/servers/:id", servers.Get)
+	authed.PUT("/servers/:id", servers.Update)
+	authed.DELETE("/servers/:id", servers.Delete)
+	authed.POST("/servers/:id/test", servers.TestConnection)
+	authed.POST("/servers/test-direct", servers.TestConnectionDirect)
 
-		// Protected routes
-		authed := api.Group("")
-		authed.Use(handler.AuthMiddleware(svc.Auth))
-		{
-			// Servers
-			servers := authed.Group("/servers")
-			{
-				servers.GET("", serverHandler.List)
-				servers.POST("", serverHandler.Create)
-				servers.GET("/:id", serverHandler.Get)
-				servers.PUT("/:id", serverHandler.Update)
-				servers.DELETE("/:id", serverHandler.Delete)
-				servers.POST("/:id/test", serverHandler.TestConnection)
-				servers.POST("/test-direct", serverHandler.TestConnectionDirect)
+	authed.GET("/servers/:id/images", images.ListRemote)
+	authed.POST("/servers/:id/images/pull", images.PullRemote)
+	authed.DELETE("/servers/:id/images/:image_id", images.RemoveRemote)
+	authed.GET("/images", images.List)
+	authed.POST("/images", images.Create)
+	authed.DELETE("/images/:id", images.Delete)
 
-				// Remote images on server
-				servers.GET("/:id/images", imageHandler.ListRemote)
-				servers.POST("/:id/images/pull", imageHandler.PullRemote)
-				servers.DELETE("/:id/images/:image_id", imageHandler.RemoveRemote)
+	authed.GET("/servers/:id/containers", containers.List)
+	authed.POST("/servers/:id/containers", containers.Create)
+	authed.POST("/servers/:id/containers/:name/action", containers.Action)
+	authed.GET("/servers/:id/containers/:name/logs", containers.Logs)
+	authed.GET("/servers/:id/volumes", volumes.List)
+	authed.POST("/servers/:id/volumes", volumes.Create)
+	authed.DELETE("/servers/:id/volumes/:name", volumes.Delete)
 
-				// Containers on server
-				servers.GET("/:id/containers", containerHandler.List)
-				servers.POST("/:id/containers", containerHandler.Create)
-				servers.POST("/:id/containers/:name/action", containerHandler.Action)
-				servers.GET("/:id/containers/:name/logs", containerHandler.Logs)
-				servers.POST("/:id/exec", containerHandler.Exec)
+	authed.GET("/config", config.GetAll)
+	authed.PUT("/config/:key", config.Update)
+	authed.POST("/config/test-email", config.TestEmail)
+	authed.GET("/applications", applications.List)
+	authed.POST("/applications/:id/action", applications.Action)
 
-				// Volumes on server
-				servers.GET("/:id/volumes", volumeHandler.List)
-				servers.POST("/:id/volumes", volumeHandler.Create)
-				servers.DELETE("/:id/volumes/:name", volumeHandler.Delete)
-			}
-
-			// Images (DB records)
-			images := authed.Group("/images")
-			{
-				images.GET("", imageHandler.List)
-				images.POST("", imageHandler.Create)
-				images.GET("/:id", imageHandler.Get)
-				images.PUT("/:id", imageHandler.Update)
-				images.DELETE("/:id", imageHandler.Delete)
-			}
-
-			// Config
-			cfgGroup := authed.Group("/config")
-			{
-				cfgGroup.GET("", configHandler.List)
-				cfgGroup.GET("/all", configHandler.GetAll)
-				cfgGroup.PUT("/:key", configHandler.Update)
-				cfgGroup.POST("/test-email", configHandler.TestEmail)
-			}
-
-			// Applications (admin)
-			apps := authed.Group("/applications")
-			{
-				apps.GET("", appHandler.List)
-				apps.GET("/:id", appHandler.Get)
-				apps.POST("/:id/action", appHandler.Action)
-			}
-		}
-
-		// Terminal (WebSocket, auth via query param)
-		terminal := api.Group("/terminal")
-		{
-			terminal.GET("/ws/:server_id", terminalHandler.ServerTerminal)
-			terminal.GET("/container/ws/:server_id/:container_name", terminalHandler.ContainerTerminal)
-		}
-	}
-
-	return r
+	api.GET("/terminal/ws/:server_id", terminal.ServerTerminal)
+	api.GET("/terminal/container/ws/:server_id/:container_name", terminal.ContainerTerminal)
+	return router
 }

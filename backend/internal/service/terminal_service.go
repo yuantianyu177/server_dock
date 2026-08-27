@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -20,52 +19,19 @@ type TerminalSession struct {
 
 type TerminalService struct {
 	serverService *ServerService
-	sessions      map[string]*TerminalSession
-	mu            sync.RWMutex
 }
 
 func NewTerminalService(serverService *ServerService) *TerminalService {
-	return &TerminalService{
-		serverService: serverService,
-		sessions:      make(map[string]*TerminalSession),
-	}
+	return &TerminalService{serverService: serverService}
 }
 
 // CreateSession creates an SSH terminal session to a server.
-func (t *TerminalService) CreateSession(sessionID string, serverID uint, command string) (*TerminalSession, error) {
-	server, err := t.serverService.GetRawByID(serverID)
+func (t *TerminalService) CreateSession(serverID uint, command string) (*TerminalSession, error) {
+	server, credential, err := t.serverService.ResolveServer(serverID)
 	if err != nil {
-		return nil, fmt.Errorf("server not found")
+		return nil, err
 	}
-
-	cred, err := t.serverService.DecryptCredential(server)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt credential")
-	}
-
-	var authMethods []ssh.AuthMethod
-	switch server.AuthType {
-	case "password":
-		authMethods = []ssh.AuthMethod{ssh.Password(cred)}
-	case "key":
-		signer, err := ssh.ParsePrivateKey([]byte(cred))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %w", err)
-		}
-		authMethods = []ssh.AuthMethod{ssh.PublicKeys(signer)}
-	default:
-		return nil, fmt.Errorf("unsupported auth type: %s", server.AuthType)
-	}
-
-	config := &ssh.ClientConfig{
-		User:            server.User,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
-	}
-
-	addr := fmt.Sprintf("%s:%d", server.Hostname, server.Port)
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := dialSSH(server.Hostname, server.Port, server.User, server.AuthType, credential)
 	if err != nil {
 		return nil, fmt.Errorf("SSH connection failed: %w", err)
 	}
@@ -117,32 +83,12 @@ func (t *TerminalService) CreateSession(sessionID string, serverID uint, command
 		}
 	}
 
-	ts := &TerminalSession{
+	return &TerminalSession{
 		client:  client,
 		session: session,
 		stdin:   stdin,
 		stdout:  stdout,
-	}
-
-	t.mu.Lock()
-	t.sessions[sessionID] = ts
-	t.mu.Unlock()
-
-	return ts, nil
-}
-
-// CloseSession closes and cleans up a terminal session.
-func (t *TerminalService) CloseSession(sessionID string) {
-	t.mu.Lock()
-	ts, ok := t.sessions[sessionID]
-	if ok {
-		delete(t.sessions, sessionID)
-	}
-	t.mu.Unlock()
-
-	if ok && ts != nil {
-		ts.Close()
-	}
+	}, nil
 }
 
 func (ts *TerminalSession) Close() {

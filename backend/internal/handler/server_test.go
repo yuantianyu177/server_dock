@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"serverdock/internal/model"
-	"serverdock/internal/pkg"
-	"serverdock/internal/repository"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -37,12 +35,11 @@ func setupServerHandlerTest(t *testing.T) (*gin.Engine, string) {
 	}
 	db.AutoMigrate(&model.Admin{}, &model.Server{})
 
-	adminRepo := repository.NewAdminRepo(db)
-	authSvc := service.NewAuthService(adminRepo, "test-secret-key-for-jwt-signing")
+	authSvc := service.NewAuthService(db, "test-secret-key-for-jwt-signing")
 	authSvc.EnsureDefaultAdmin("admin", "admin123")
 
-	serverRepo := repository.NewServerRepo(db)
-	serverSvc := service.NewServerService(serverRepo, &mockSSH{}, testEncryptKey)
+	ssh := &mockSSH{}
+	serverSvc := service.NewServerService(db, ssh.TestConnection, ssh.ExecuteCommand, testEncryptKey)
 	serverHandler := NewServerHandler(serverSvc)
 	authHandler := NewAuthHandler(authSvc)
 
@@ -70,7 +67,7 @@ func setupServerHandlerTest(t *testing.T) (*gin.Engine, string) {
 
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	token := resp["data"].(map[string]interface{})["token"].(string)
+	token := resp["token"].(string)
 
 	return r, token
 }
@@ -103,12 +100,10 @@ func TestServerHandler_CRUD(t *testing.T) {
 		t.Fatalf("List: expected 200, got %d", w.Code)
 	}
 
-	var listResp struct {
-		Data []map[string]interface{} `json:"data"`
-	}
+	var listResp []map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &listResp)
-	if len(listResp.Data) != 1 {
-		t.Fatalf("Expected 1 server, got %d", len(listResp.Data))
+	if len(listResp) != 1 {
+		t.Fatalf("Expected 1 server, got %d", len(listResp))
 	}
 
 	// Get
@@ -149,8 +144,8 @@ func TestServerHandler_CRUD(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("Delete: expected 200, got %d", w.Code)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Delete: expected 204, got %d", w.Code)
 	}
 }
 
@@ -193,6 +188,3 @@ func TestServerHandler_CreateInvalidRequest(t *testing.T) {
 		t.Fatalf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
-
-// Suppress unused import
-var _ = pkg.SuccessResponse

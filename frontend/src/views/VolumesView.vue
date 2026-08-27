@@ -1,12 +1,10 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { serversApi } from '@/api/servers'
-import { containersApi } from '@/api/containers'
+import { del, get, post } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import ServerSelect from '@/components/ServerSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,7 +27,7 @@ const deleteLoading = ref(false)
 async function loadServers() {
   serversLoading.value = true
   try {
-    servers.value = await serversApi.list() || []
+    servers.value = await get('/servers') || []
     const queryId = route.query.server ? Number(route.query.server) : null
     if (queryId && servers.value.find(s => s.id === queryId)) {
       selectedServerId.value = queryId
@@ -47,7 +45,7 @@ async function loadVolumes() {
   if (!selectedServerId.value) return
   volumesLoading.value = true
   try {
-    volumes.value = await containersApi.listVolumes(selectedServerId.value) || []
+    volumes.value = await get(`/servers/${selectedServerId.value}/volumes`) || []
   } catch (e) {
     toast.error(e.message)
   } finally {
@@ -65,7 +63,7 @@ async function createVolume() {
   formLoading.value = true
   formError.value = ''
   try {
-    await containersApi.createVolume(selectedServerId.value, volumeName.value)
+    await post(`/servers/${selectedServerId.value}/volumes`, { name: volumeName.value })
     createModal.value = false
     volumeName.value = ''
     toast.success('Volume created successfully')
@@ -77,14 +75,15 @@ async function createVolume() {
   }
 }
 
-async function confirmDelete(vol) {
+function confirmDelete(vol) {
   deleteTarget.value = vol
 }
 
 async function doDelete() {
   deleteLoading.value = true
   try {
-    await containersApi.deleteVolume(selectedServerId.value, deleteTarget.value.Name || deleteTarget.value.name)
+    const name = deleteTarget.value.Name || deleteTarget.value.name
+    await del(`/servers/${selectedServerId.value}/volumes/${encodeURIComponent(name)}`)
     deleteTarget.value = null
     toast.success('Volume deleted')
     loadVolumes()
@@ -101,12 +100,7 @@ watch(selectedServerId, (id) => {
   loadVolumes()
 })
 
-onMounted(async () => {
-  await loadServers()
-  if (selectedServerId.value) {
-    loadVolumes()
-  }
-})
+onMounted(loadServers)
 </script>
 
 <template>
@@ -117,11 +111,9 @@ onMounted(async () => {
         <p class="page-subtitle">Manage Docker volumes across all servers</p>
       </div>
       <div class="header-actions">
-        <ServerSelect
-          v-if="servers.length > 0"
-          v-model="selectedServerId"
-          :servers="servers"
-        />
+        <select v-if="servers.length > 0" v-model.number="selectedServerId" class="form-select server-filter">
+          <option v-for="server in servers" :key="server.id" :value="server.id">{{ server.host }}</option>
+        </select>
         <button class="btn btn-primary btn-w-action" @click="openCreateModal" :disabled="!selectedServerId">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Create Volume

@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"serverdock/internal/model"
-	"serverdock/internal/pkg"
-	"serverdock/internal/repository"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -26,8 +24,7 @@ func setupAuthTest(t *testing.T) (*gin.Engine, *service.AuthService) {
 	}
 	db.AutoMigrate(&model.Admin{})
 
-	repo := repository.NewAdminRepo(db)
-	authSvc := service.NewAuthService(repo, "test-secret-key-for-jwt-signing")
+	authSvc := service.NewAuthService(db, "test-secret-key-for-jwt-signing")
 	authSvc.EnsureDefaultAdmin("admin", "admin123")
 
 	authHandler := NewAuthHandler(authSvc)
@@ -58,10 +55,9 @@ func TestLogin_Success(t *testing.T) {
 		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp pkg.Response
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != 0 {
-		t.Fatalf("Expected code 0, got %d", resp.Code)
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || resp["token"] == "" {
+		t.Fatalf("Expected token response, got %s", w.Body.String())
 	}
 }
 
@@ -102,8 +98,7 @@ func getAuthToken(t *testing.T, r *gin.Engine) string {
 
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	return data["token"].(string)
+	return resp["token"].(string)
 }
 
 func TestMe_Success(t *testing.T) {
@@ -115,7 +110,7 @@ func TestMe_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != 200 {
+	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
@@ -156,8 +151,8 @@ func TestChangePassword_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != 200 {
-		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected 204, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

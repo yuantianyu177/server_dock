@@ -6,17 +6,19 @@ import (
 	"serverdock/internal/dto"
 	"serverdock/internal/model"
 	"serverdock/internal/pkg"
-	"serverdock/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type ServerService struct {
-	serverRepo *repository.ServerRepo
-	sshService SSHService
-	encryptKey string
+	db             *gorm.DB
+	testConnection SSHTestFunc
+	runCommand     SSHRunFunc
+	encryptKey     string
 }
 
-func NewServerService(serverRepo *repository.ServerRepo, sshService SSHService, encryptKey string) *ServerService {
-	return &ServerService{serverRepo: serverRepo, sshService: sshService, encryptKey: encryptKey}
+func NewServerService(db *gorm.DB, testConnection SSHTestFunc, runCommand SSHRunFunc, encryptKey string) *ServerService {
+	return &ServerService{db: db, testConnection: testConnection, runCommand: runCommand, encryptKey: encryptKey}
 }
 
 func (s *ServerService) Create(req *dto.CreateServerRequest) (*dto.ServerResponse, error) {
@@ -31,48 +33,37 @@ func (s *ServerService) Create(req *dto.CreateServerRequest) (*dto.ServerRespons
 	}
 
 	server := &model.Server{
-		Host:        req.Host,
-		Hostname:    req.Hostname,
-		Port:        port,
-		User:        req.User,
-		AuthType:    req.AuthType,
-		Credential:  encrypted,
-		Description: req.Description,
+		Host: req.Host, Hostname: req.Hostname, Port: port, User: req.User,
+		AuthType: req.AuthType, Credential: encrypted, Description: req.Description,
 	}
-
-	if err := s.serverRepo.Create(server); err != nil {
+	if err := s.db.Create(server).Error; err != nil {
 		return nil, err
 	}
-	return s.toResponse(server), nil
+	return serverResponse(server), nil
 }
 
 func (s *ServerService) GetByID(id uint) (*dto.ServerResponse, error) {
-	server, err := s.serverRepo.FindByID(id)
+	server, err := s.find(id)
 	if err != nil {
 		return nil, errors.New("server not found")
 	}
-	return s.toResponse(server), nil
-}
-
-func (s *ServerService) GetRawByID(id uint) (*model.Server, error) {
-	return s.serverRepo.FindByID(id)
+	return serverResponse(server), nil
 }
 
 func (s *ServerService) List() ([]dto.ServerResponse, error) {
-	servers, err := s.serverRepo.List()
-	if err != nil {
+	var servers []model.Server
+	if err := s.db.Order("id desc").Find(&servers).Error; err != nil {
 		return nil, err
 	}
-
-	var responses []dto.ServerResponse
-	for _, srv := range servers {
-		responses = append(responses, *s.toResponse(&srv))
+	responses := make([]dto.ServerResponse, len(servers))
+	for i := range servers {
+		responses[i] = *serverResponse(&servers[i])
 	}
 	return responses, nil
 }
 
 func (s *ServerService) Update(id uint, req *dto.UpdateServerRequest) (*dto.ServerResponse, error) {
-	server, err := s.serverRepo.FindByID(id)
+	server, err := s.find(id)
 	if err != nil {
 		return nil, errors.New("server not found")
 	}
@@ -93,79 +84,76 @@ func (s *ServerService) Update(id uint, req *dto.UpdateServerRequest) (*dto.Serv
 		server.AuthType = req.AuthType
 	}
 	if req.Credential != "" {
-		encrypted, err := pkg.Encrypt(req.Credential, s.encryptKey)
+		server.Credential, err = pkg.Encrypt(req.Credential, s.encryptKey)
 		if err != nil {
 			return nil, errors.New("failed to encrypt credential")
 		}
-		server.Credential = encrypted
 	}
 	if req.Description != "" {
 		server.Description = req.Description
 	}
 
-	if err := s.serverRepo.Update(server); err != nil {
+	if err := s.db.Save(server).Error; err != nil {
 		return nil, err
 	}
-	return s.toResponse(server), nil
+	return serverResponse(server), nil
 }
 
 func (s *ServerService) Delete(id uint) error {
-	_, err := s.serverRepo.FindByID(id)
-	if err != nil {
+	result := s.db.Delete(&model.Server{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
 		return errors.New("server not found")
 	}
-	return s.serverRepo.Delete(id)
+	return nil
 }
 
 func (s *ServerService) TestConnectionDirect(hostname string, port int, user, authType, credential string) error {
 	if port <= 0 {
 		port = 22
 	}
-	return s.sshService.TestConnection(hostname, port, user, authType, credential)
+	return s.testConnection(hostname, port, user, authType, credential)
 }
 
 func (s *ServerService) TestConnection(id uint) error {
-	server, err := s.serverRepo.FindByID(id)
+	server, credential, err := s.ResolveServer(id)
 	if err != nil {
-		return errors.New("server not found")
+		return err
 	}
-
-	credential, err := pkg.Decrypt(server.Credential, s.encryptKey)
-	if err != nil {
-		return errors.New("failed to decrypt credential")
-	}
-
-	return s.sshService.TestConnection(server.Hostname, server.Port, server.User, server.AuthType, credential)
+	return s.testConnection(server.Hostname, server.Port, server.User, server.AuthType, credential)
 }
 
-// DecryptCredential decrypts and returns the server's credential.
-func (s *ServerService) DecryptCredential(server *model.Server) (string, error) {
-	return pkg.Decrypt(server.Credential, s.encryptKey)
-}
-
-// ResolveServer fetches a server by ID and decrypts its credential in one call.
-func (s *ServerService) ResolveServer(serverID uint) (*model.Server, string, error) {
-	server, err := s.serverRepo.FindByID(serverID)
+func (s *ServerService) ResolveServer(id uint) (*model.Server, string, error) {
+	server, err := s.find(id)
 	if err != nil {
 		return nil, "", errors.New("server not found")
 	}
-	cred, err := pkg.Decrypt(server.Credential, s.encryptKey)
+	credential, err := pkg.Decrypt(server.Credential, s.encryptKey)
 	if err != nil {
 		return nil, "", errors.New("failed to decrypt credential")
 	}
-	return server, cred, nil
+	return server, credential, nil
 }
 
-func (s *ServerService) toResponse(server *model.Server) *dto.ServerResponse {
+func (s *ServerService) ExecuteCommand(serverID uint, command string) (string, error) {
+	server, credential, err := s.ResolveServer(serverID)
+	if err != nil {
+		return "", err
+	}
+	return s.runCommand(server.Hostname, server.Port, server.User, server.AuthType, credential, command)
+}
+
+func (s *ServerService) find(id uint) (*model.Server, error) {
+	var server model.Server
+	return &server, s.db.First(&server, id).Error
+}
+
+func serverResponse(server *model.Server) *dto.ServerResponse {
 	return &dto.ServerResponse{
-		ID:          server.ID,
-		Host:        server.Host,
-		Hostname:    server.Hostname,
-		Port:        server.Port,
-		User:        server.User,
-		AuthType:    server.AuthType,
-		Description: server.Description,
-		CreatedAt:   server.CreatedAt,
-		UpdatedAt:   server.UpdatedAt,
+		ID: server.ID, Host: server.Host, Hostname: server.Hostname, Port: server.Port,
+		User: server.User, AuthType: server.AuthType, Description: server.Description,
+		CreatedAt: server.CreatedAt, UpdatedAt: server.UpdatedAt,
 	}
 }

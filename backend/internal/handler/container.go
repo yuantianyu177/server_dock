@@ -5,18 +5,15 @@ import (
 	"strconv"
 
 	"serverdock/internal/dto"
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-type ContainerHandler struct {
-	containerService *service.ContainerService
-}
+type ContainerHandler struct{ service *service.ContainerService }
 
 func NewContainerHandler(containerService *service.ContainerService) *ContainerHandler {
-	return &ContainerHandler{containerService: containerService}
+	return &ContainerHandler{service: containerService}
 }
 
 func (h *ContainerHandler) List(c *gin.Context) {
@@ -24,14 +21,12 @@ func (h *ContainerHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	containers, err := h.containerService.ListContainers(id)
+	containers, err := h.service.ListContainers(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(containers))
+	c.JSON(http.StatusOK, containers)
 }
 
 func (h *ContainerHandler) Create(c *gin.Context) {
@@ -39,21 +34,17 @@ func (h *ContainerHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	var req dto.CreateContainerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	var request dto.CreateContainerRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-
-	// Use default config values; these will be replaced by dynamic config in Phase 6
-	result, err := h.containerService.CreateContainer(id, req.Name, req.Image, req.ExtraArgs, 20000, 30000, 5, "/data")
+	result, err := h.service.CreateContainer(id, request.Name, request.Image, request.ExtraArgs, 20000, 30000, 5, "/data")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(result))
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *ContainerHandler) Action(c *gin.Context) {
@@ -61,20 +52,16 @@ func (h *ContainerHandler) Action(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	name := c.Param("name")
-	var req dto.ContainerActionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	var request dto.ContainerActionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-
-	if err := h.containerService.ContainerAction(id, name, req.Action); err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+	if err := h.service.ContainerAction(id, c.Param("name"), request.Action); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(nil))
+	c.Status(http.StatusNoContent)
 }
 
 func (h *ContainerHandler) Logs(c *gin.Context) {
@@ -82,46 +69,19 @@ func (h *ContainerHandler) Logs(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	name := c.Param("name")
 	tail, _ := strconv.Atoi(c.DefaultQuery("tail", "100"))
-
-	logs, err := h.containerService.GetContainerLogs(id, name, tail)
+	logs, err := h.service.GetContainerLogs(id, c.Param("name"), tail)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(gin.H{"logs": logs}))
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
-func (h *ContainerHandler) Exec(c *gin.Context) {
-	id, ok := parseUintParam(c, "id")
-	if !ok {
-		return
-	}
-
-	var req dto.ExecCommandRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
-		return
-	}
-
-	output, err := h.containerService.ExecCommand(id, req.Command)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, err.Error()))
-		return
-	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(gin.H{"output": output}))
-}
-
-type VolumeHandler struct {
-	containerService *service.ContainerService
-}
+type VolumeHandler struct{ service *service.ContainerService }
 
 func NewVolumeHandler(containerService *service.ContainerService) *VolumeHandler {
-	return &VolumeHandler{containerService: containerService}
+	return &VolumeHandler{service: containerService}
 }
 
 func (h *VolumeHandler) List(c *gin.Context) {
@@ -129,14 +89,12 @@ func (h *VolumeHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	volumes, err := h.containerService.ListVolumes(id)
+	volumes, err := h.service.ListVolumes(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(volumes))
+	c.JSON(http.StatusOK, volumes)
 }
 
 func (h *VolumeHandler) Create(c *gin.Context) {
@@ -144,19 +102,16 @@ func (h *VolumeHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	var req dto.CreateVolumeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	var request dto.CreateVolumeRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-
-	if err := h.containerService.CreateVolumeSingle(id, req.Name); err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+	if err := h.service.CreateVolumeSingle(id, request.Name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(nil))
+	c.Status(http.StatusNoContent)
 }
 
 func (h *VolumeHandler) Delete(c *gin.Context) {
@@ -164,12 +119,9 @@ func (h *VolumeHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	name := c.Param("name")
-	if err := h.containerService.RemoveVolume(id, name); err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+	if err := h.service.RemoveVolume(id, c.Param("name")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(nil))
+	c.Status(http.StatusNoContent)
 }

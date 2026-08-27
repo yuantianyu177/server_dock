@@ -48,11 +48,10 @@ Use the admin credentials configured above (default: `admin` / `admin123`).
 ## Development
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 - Frontend (hot-reload): `http://localhost:3000`
-- Frontend (hot-reload, alt): `http://localhost:8080`
 - Backend API: `http://localhost:8000`
 
 ## Architecture

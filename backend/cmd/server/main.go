@@ -6,7 +6,6 @@ import (
 
 	"serverdock/internal/config"
 	"serverdock/internal/model"
-	"serverdock/internal/repository"
 	"serverdock/internal/router"
 	"serverdock/internal/service"
 )
@@ -28,24 +27,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize repositories
-	adminRepo := repository.NewAdminRepo(db)
-	serverRepo := repository.NewServerRepo(db)
-	imageRepo := repository.NewImageRepo(db)
-	configRepo := repository.NewConfigRepo(db)
-	appRepo := repository.NewApplicationRepo(db)
-
-	// Initialize services
-	sshService := service.NewRealSSHService()
-	dockerService := service.NewRealDockerService(sshService)
-
-	authService := service.NewAuthService(adminRepo, cfg.SecretKey)
-	serverService := service.NewServerService(serverRepo, sshService, cfg.SSHCredentialKey)
-	imageService := service.NewImageService(imageRepo, serverService, dockerService)
-	containerService := service.NewContainerService(serverService, dockerService, sshService)
-	configService := service.NewConfigService(configRepo)
+	authService := service.NewAuthService(db, cfg.SecretKey)
+	serverService := service.NewServerService(db, service.TestSSHConnection, service.ExecuteSSHCommand, cfg.SSHCredentialKey)
+	imageService := service.NewImageService(db, serverService)
+	containerService := service.NewContainerService(serverService)
+	configService := service.NewConfigService(db)
 	emailService := service.NewSMTPEmailService(configService)
-	appService := service.NewApplicationService(appRepo, imageRepo, serverService, containerService, configService, emailService)
+	appService := service.NewApplicationService(db, serverService, containerService, configService, emailService.SendAsync)
 	terminalService := service.NewTerminalService(serverService)
 
 	// Ensure default configs
@@ -62,14 +50,14 @@ func main() {
 
 	// Setup router
 	r := router.Setup(cfg.Debug, &router.Services{
-		Auth:      authService,
-		Server:    serverService,
-		Image:     imageService,
-		Container: containerService,
-		Config:    configService,
-		Email:       emailService,
+		Auth:        authService,
+		Server:      serverService,
+		Image:       imageService,
+		Container:   containerService,
+		Config:      configService,
 		Application: appService,
 		Terminal:    terminalService,
+		SendEmail:   emailService.Send,
 	})
 
 	slog.Info("Server starting", "port", cfg.Port)

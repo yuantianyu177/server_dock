@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { configApi } from '@/api/config'
-import { authApi } from '@/api/auth'
+import { get, post, put } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 
 const toast = useToast()
@@ -85,7 +84,7 @@ const navItems = [
 async function loadConfig() {
   loading.value = true
   try {
-    config.value = await configApi.all() || {}
+    config.value = await get('/config') || {}
   } catch (e) {
     toast.error(e.message)
   } finally {
@@ -104,7 +103,7 @@ async function saveAll() {
     for (const key of keys) {
       const val = config.value[key]
       if (val !== undefined && val !== null) {
-        await configApi.update(key, String(val))
+        await put(`/config/${key}`, { value: String(val) })
       }
     }
     dirty.value = false
@@ -119,7 +118,7 @@ async function saveAll() {
 async function testEmail() {
   testEmailLoading.value = true
   try {
-    await configApi.testEmail()
+    await post('/config/test-email')
     toast.success('Test email sent successfully.')
   } catch (e) {
     toast.error(e.message)
@@ -137,7 +136,10 @@ async function changePassword() {
   }
   pwLoading.value = true
   try {
-    await authApi.changePassword(pwForm.value.oldPassword, pwForm.value.newPassword)
+    await post('/auth/change-password', {
+      old_password: pwForm.value.oldPassword,
+      new_password: pwForm.value.newPassword
+    })
     pwForm.value = { oldPassword: '', newPassword: '', confirm: '' }
     pwSuccess.value = true
     setTimeout(() => { pwSuccess.value = false }, 4000)
@@ -581,12 +583,6 @@ onMounted(loadConfig)
 
 .toggle-input:checked + .toggle-track .toggle-thumb {
   transform: translateX(16px);
-}
-
-/* -- Spinner -- */
-.spinner-sm {
-  width: 12px;
-  height: 12px;
 }
 
 /* -- Password alerts -- */

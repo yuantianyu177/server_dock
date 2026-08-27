@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { applicationsApi } from '@/api/applications'
+import { get, post } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import StatusBadge from '@/components/StatusBadge.vue'
 import BaseModal from '@/components/BaseModal.vue'
@@ -34,7 +34,7 @@ const counts = computed(() => {
 async function loadApps() {
   loading.value = true
   try {
-    apps.value = await applicationsApi.list() || []
+    apps.value = await get('/applications') || []
   } catch (e) {
     toast.error(e.message)
   } finally {
@@ -52,7 +52,10 @@ async function doAction() {
   actionLoading.value = true
   actionError.value = ''
   try {
-    await applicationsApi.action(actionModal.value.app.id, actionModal.value.action, adminNotes.value)
+    await post(`/applications/${actionModal.value.app.id}/action`, {
+      action: actionModal.value.action,
+      admin_notes: adminNotes.value
+    })
     const actionName = actionModal.value.action === 'approve' ? 'approved' : 'rejected'
     toast.success(`Application ${actionName} successfully`)
     actionModal.value = null

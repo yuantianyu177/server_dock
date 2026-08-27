@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -15,21 +14,21 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, pkg.ErrorResponse(401, "authorization header required"))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "authorization header required"})
 			c.Abort()
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, pkg.ErrorResponse(401, "invalid authorization format"))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
 			c.Abort()
 			return
 		}
 
 		adminID, username, err := authService.ValidateToken(parts[1])
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, pkg.ErrorResponse(401, "invalid or expired token"))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			c.Abort()
 			return
 		}
@@ -45,7 +44,7 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 func parseUintParam(c *gin.Context, name string) (uint, bool) {
 	id, err := strconv.ParseUint(c.Param(name), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid "+name))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + name})
 		return 0, false
 	}
 	return uint(id), true

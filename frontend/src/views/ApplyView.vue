@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
-import { applicationsApi } from '@/api/applications'
-import CustomSelect from '@/components/CustomSelect.vue'
+import { get, post } from '@/api/client'
 
 const servers = ref([])
 const images = ref([])
@@ -22,16 +21,6 @@ const success = ref(false)
 const hasServers = computed(() => servers.value.length > 0)
 const hasImages = computed(() => images.value.length > 0)
 
-const serverOptions = computed(() => servers.value.map(s => ({
-  value: s.id,
-  label: s.host,
-  subtitle: (s.description ? s.description + ' · ' : '') + (s.container_count !== undefined ? `${s.container_count} running` : '')
-})))
-
-const imageOptions = computed(() => images.value.map(i => ({
-  value: i.id,
-  label: i.name
-})))
 const canSubmit = computed(() =>
   !submitting.value &&
   !imagesLoading.value &&
@@ -44,7 +33,7 @@ async function loadServers() {
   serversLoading.value = true
   error.value = ''
   try {
-    servers.value = await applicationsApi.publicServers() || []
+    servers.value = await get('/applications/public/servers') || []
     if (!servers.value.find((srv) => srv.id === Number(form.value.server_id))) {
       form.value.server_id = ''
       form.value.image_id = ''
@@ -67,7 +56,7 @@ async function loadImages(serverId) {
   }
   imagesLoading.value = true
   try {
-    images.value = await applicationsApi.publicImages(serverId) || []
+    images.value = await get(`/applications/public/server/${serverId}/images`) || []
   } catch (e) {
     images.value = []
   } finally {
@@ -87,7 +76,7 @@ async function submit() {
   submitting.value = true
   error.value = ''
   try {
-    await applicationsApi.apply({
+    await post('/applications/public/apply', {
       applicant_name: form.value.applicant_name,
       applicant_email: form.value.applicant_email,
       server_id: Number(form.value.server_id),
@@ -169,29 +158,26 @@ onMounted(loadServers)
             <div class="form-section-label">Container configuration</div>
             <div class="form-group">
               <label class="form-label">Server <span class="required">*</span></label>
-              <CustomSelect
-                v-model="form.server_id"
-                :options="serverOptions"
-                :placeholder="serversLoading ? 'Loading servers…' : hasServers ? 'Select a server…' : 'No servers available'"
-                :disabled="serversLoading || !hasServers"
-                label-key="label"
-                value-key="value"
-                subtitle-key="subtitle"
-              />
+              <select v-model.number="form.server_id" class="form-select" :disabled="serversLoading || !hasServers">
+                <option value="" disabled>
+                  {{ serversLoading ? 'Loading servers…' : hasServers ? 'Select a server…' : 'No servers available' }}
+                </option>
+                <option v-for="server in servers" :key="server.id" :value="server.id">
+                  {{ server.host }}{{ server.description ? ` — ${server.description}` : '' }}
+                </option>
+              </select>
               <span v-if="!serversLoading && !hasServers" class="form-hint" style="color:var(--warning)">
                 No servers are currently available for new requests.
               </span>
             </div>
             <div class="form-group">
               <label class="form-label">Image <span class="required">*</span></label>
-              <CustomSelect
-                v-model="form.image_id"
-                :options="imageOptions"
-                :placeholder="!hasServers ? 'No environments available' : !form.server_id ? 'Select a server first' : imagesLoading ? 'Loading…' : hasImages ? 'Select an image…' : 'No images available'"
-                :disabled="!form.server_id || imagesLoading || !hasImages"
-                label-key="label"
-                value-key="value"
-              />
+              <select v-model.number="form.image_id" class="form-select" :disabled="!form.server_id || imagesLoading || !hasImages">
+                <option value="" disabled>
+                  {{ !hasServers ? 'No environments available' : !form.server_id ? 'Select a server first' : imagesLoading ? 'Loading…' : hasImages ? 'Select an image…' : 'No images available' }}
+                </option>
+                <option v-for="image in images" :key="image.id" :value="image.id">{{ image.name }}</option>
+              </select>
               <span v-if="form.server_id && !hasImages && !imagesLoading" class="form-hint" style="color:var(--warning)">
                 No images available for this server.
               </span>

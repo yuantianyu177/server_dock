@@ -1,266 +1,158 @@
 package service
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"serverdock/internal/pkg"
+	"sync"
 )
 
 var containerNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-type ContainerService struct {
-	serverService *ServerService
-	dockerService DockerService
-	sshService    SSHService
+type ContainerService struct{ serverService *ServerService }
+
+func NewContainerService(serverService *ServerService) *ContainerService {
+	return &ContainerService{serverService: serverService}
 }
 
-func NewContainerService(serverService *ServerService, dockerService DockerService, sshService SSHService) *ContainerService {
-	return &ContainerService{serverService: serverService, dockerService: dockerService, sshService: sshService}
-}
+func ValidateContainerName(name string) bool { return containerNameRegex.MatchString(name) }
 
-// ValidateContainerName checks if the name matches [a-zA-Z0-9_-].
-func ValidateContainerName(name string) bool {
-	return containerNameRegex.MatchString(name)
-}
-
-// ValidateDockerCommand ensures the command starts with "docker".
-func ValidateDockerCommand(cmd string) bool {
-	return strings.HasPrefix(strings.TrimSpace(cmd), "docker")
-}
-
-// ParseUsedPorts parses `ss -tlnp` output to extract listening ports.
-func ParseUsedPorts(ssOutput string) map[int]bool {
+func parseUsedPorts(output string) map[int]bool {
 	ports := make(map[int]bool)
-	for _, line := range strings.Split(ssOutput, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "State") {
-			continue
-		}
+	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 4 {
 			continue
 		}
-		addr := fields[3]
-		idx := strings.LastIndex(addr, ":")
-		if idx < 0 {
-			continue
-		}
-		portStr := addr[idx+1:]
-		port, err := strconv.Atoi(portStr)
-		if err == nil {
+		if port, err := strconv.Atoi(fields[3][strings.LastIndex(fields[3], ":")+1:]); err == nil {
 			ports[port] = true
 		}
 	}
 	return ports
 }
 
-// ParseDockerPorts parses `docker ps` port mappings to extract host ports.
-func ParseDockerPorts(dockerPsOutput string) map[int]bool {
+func parseDockerPorts(output string) map[int]bool {
 	ports := make(map[int]bool)
-	for _, line := range strings.Split(dockerPsOutput, "\n") {
-		// Look for patterns like 0.0.0.0:20000->22/tcp
-		for _, part := range strings.Split(line, ",") {
-			part = strings.TrimSpace(part)
-			if idx := strings.Index(part, "->"); idx > 0 {
-				hostPart := part[:idx]
-				colonIdx := strings.LastIndex(hostPart, ":")
-				if colonIdx >= 0 {
-					portStr := hostPart[colonIdx+1:]
-					port, err := strconv.Atoi(portStr)
-					if err == nil {
-						ports[port] = true
-					}
-				}
-			}
+	for _, part := range strings.FieldsFunc(output, func(r rune) bool { return r == ',' || r == '\n' }) {
+		host, _, ok := strings.Cut(strings.TrimSpace(part), "->")
+		if !ok {
+			continue
+		}
+		if port, err := strconv.Atoi(host[strings.LastIndex(host, ":")+1:]); err == nil {
+			ports[port] = true
 		}
 	}
 	return ports
 }
 
-// AllocatePorts finds N available ports in the given range.
-func AllocatePorts(usedPorts map[int]bool, start, end, count int) ([]int, error) {
-	var allocated []int
-	for port := start; port <= end && len(allocated) < count; port++ {
-		if !usedPorts[port] {
-			allocated = append(allocated, port)
+func allocatePorts(used map[int]bool, start, end, count int) ([]int, error) {
+	ports := make([]int, 0, count)
+	for port := start; port <= end && len(ports) < count; port++ {
+		if !used[port] {
+			ports = append(ports, port)
 		}
 	}
-	if len(allocated) < count {
-		return nil, fmt.Errorf("not enough available ports: need %d, found %d", count, len(allocated))
+	if len(ports) != count {
+		return nil, fmt.Errorf("not enough available ports: need %d, found %d", count, len(ports))
 	}
-	return allocated, nil
+	return ports, nil
 }
 
-// BuildDockerRunCommand builds a `docker run` command for container creation.
-func BuildDockerRunCommand(name, image string, sshPort int, extraPorts []int, volumeName, mountPath, extraArgs string) string {
-	password := pkg.GenerateRandomPassword(16)
-	cmd, _ := BuildDockerRunCommandWithPassword(name, image, sshPort, extraPorts, volumeName, mountPath, extraArgs, password)
-	return cmd
-}
-
-func BuildDockerRunCommandWithPassword(name, image string, sshPort int, extraPorts []int, volumeName, mountPath, extraArgs, password string) (string, string) {
-	parts := []string{"docker run -d", fmt.Sprintf("--name %s", name)}
-
-	// SSH port mapping
-	parts = append(parts, fmt.Sprintf("-p %d:22", sshPort))
-
-	// Extra port mappings (same-number)
-	for _, p := range extraPorts {
-		parts = append(parts, fmt.Sprintf("-p %d:%d", p, p))
+func buildDockerRunCommand(name, image string, sshPort int, extraPorts []int, volumeName, mountPath, extraArgs string) string {
+	parts := []string{"docker run -d", fmt.Sprintf("--name %s", name), fmt.Sprintf("-p %d:22", sshPort)}
+	for _, port := range extraPorts {
+		parts = append(parts, fmt.Sprintf("-p %d:%d", port, port))
 	}
-
-	// Volume
 	if volumeName != "" && mountPath != "" {
 		parts = append(parts, fmt.Sprintf("-v %s:%s", volumeName, mountPath))
 	}
-
-	// Extra args
-	if normalizedExtraArgs := NormalizeDockerExtraArgs(extraArgs); normalizedExtraArgs != "" {
-		parts = append(parts, normalizedExtraArgs)
+	if extraArgs = normalizeDockerExtraArgs(extraArgs); extraArgs != "" {
+		parts = append(parts, extraArgs)
 	}
-
-	parts = append(parts, "--restart unless-stopped", image)
-
-	return strings.Join(parts, " "), password
+	return strings.Join(append(parts, "--restart unless-stopped", image), " ")
 }
 
-// NormalizeDockerExtraArgs collapses multiline config input into a single shell command fragment.
-func NormalizeDockerExtraArgs(extraArgs string) string {
-	if extraArgs == "" {
-		return ""
-	}
-
-	lines := strings.Split(strings.ReplaceAll(extraArgs, "\r\n", "\n"), "\n")
-	parts := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts = append(parts, line)
-	}
-
-	return strings.Join(parts, " ")
+func normalizeDockerExtraArgs(extraArgs string) string {
+	return strings.Join(strings.Fields(extraArgs), " ")
 }
 
-
-// CreateContainer creates a container on a server with port allocation.
-func (s *ContainerService) CreateContainer(serverID uint, name, image, extraArgs string, portRangeStart, portRangeEnd, extraPortCount int, volumeMountPath string) (map[string]interface{}, error) {
+func (s *ContainerService) CreateContainer(serverID uint, name, image, extraArgs string, portStart, portEnd, extraPortCount int, mountPath string) (map[string]interface{}, error) {
 	if !ValidateContainerName(name) {
 		return nil, errors.New("invalid container name: only [a-zA-Z0-9_-] allowed")
 	}
-	image = strings.TrimSpace(image)
-	if image == "" {
+	if image = strings.TrimSpace(image); image == "" {
 		return nil, errors.New("image is required")
 	}
 
-	server, cred, err := s.serverService.ResolveServer(serverID)
+	server, credential, err := s.serverService.ResolveServer(serverID)
+	if err != nil {
+		return nil, err
+	}
+	execute := func(command string) (string, error) {
+		return s.serverService.runCommand(server.Hostname, server.Port, server.User, server.AuthType, credential, command)
+	}
+
+	var ssOutput, dockerOutput string
+	var probes sync.WaitGroup
+	probes.Add(2)
+	go func() {
+		defer probes.Done()
+		ssOutput, _ = execute("ss -tlnp")
+	}()
+	go func() {
+		defer probes.Done()
+		dockerOutput, _ = execute("docker ps --format '{{.Ports}}'")
+	}()
+	probes.Wait()
+
+	used := parseUsedPorts(ssOutput)
+	for port := range parseDockerPorts(dockerOutput) {
+		used[port] = true
+	}
+	ports, err := allocatePorts(used, portStart, portEnd, 1+extraPortCount)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get used ports (run ss and docker ps in parallel)
-	type cmdResult struct {
-		output string
-		err    error
-	}
-	ssCh := make(chan cmdResult, 1)
-	dpCh := make(chan cmdResult, 1)
-	go func() {
-		out, err := s.sshService.ExecuteCommand(server.Hostname, server.Port, server.User, server.AuthType, cred, "ss -tlnp")
-		ssCh <- cmdResult{out, err}
-	}()
-	go func() {
-		out, err := s.sshService.ExecuteCommand(server.Hostname, server.Port, server.User, server.AuthType, cred,
-			"docker ps --format '{{.Ports}}'")
-		dpCh <- cmdResult{out, err}
-	}()
-	ssResult := <-ssCh
-	dpResult := <-dpCh
-
-	usedPorts := ParseUsedPorts(ssResult.output)
-	dockerPorts := ParseDockerPorts(dpResult.output)
-	for p := range dockerPorts {
-		usedPorts[p] = true
-	}
-
-	// Allocate ports: 1 SSH + N extra
-	totalPorts := 1 + extraPortCount
-	ports, err := AllocatePorts(usedPorts, portRangeStart, portRangeEnd, totalPorts)
-	if err != nil {
-		return nil, err
-	}
-
-	sshPort := ports[0]
-	extraPorts := ports[1:]
-
-	// Create volume
+	// Docker creates a named volume referenced by -v, avoiding another SSH round trip.
 	volumeName := name + "-data"
-	if err := s.dockerService.CreateVolume(server.Hostname, server.Port, server.User, server.AuthType, cred, volumeName); err != nil {
-		return nil, fmt.Errorf("failed to create volume: %w", err)
-	}
-
-	// Build and run docker command
-	password := pkg.GenerateRandomPassword(16)
-	cmd, password := BuildDockerRunCommandWithPassword(name, image, sshPort, extraPorts, volumeName, volumeMountPath, extraArgs, password)
-	output, err := s.dockerService.CreateContainer(server.Hostname, server.Port, server.User, server.AuthType, cred, cmd)
+	password := rand.Text()
+	command := buildDockerRunCommand(name, image, ports[0], ports[1:], volumeName, mountPath, extraArgs)
+	output, err := execute(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
+	go execute(fmt.Sprintf("docker exec %s bash -c \"echo 'root:%s' | chpasswd\"", name, password))
 
-	// Set root password asynchronously after container starts
-	go func() {
-		chpasswdCmd := fmt.Sprintf("docker exec %s bash -c \"echo 'root:%s' | chpasswd\"", name, password)
-		s.sshService.ExecuteCommand(server.Hostname, server.Port, server.User, server.AuthType, cred, chpasswdCmd)
-	}()
-
-	result := map[string]interface{}{
-		"name":        name,
-		"ssh_port":    sshPort,
-		"extra_ports": extraPorts,
-		"volume":      volumeName,
-		"password":    password,
-		"output":      output,
-	}
-
-	return result, nil
+	return map[string]interface{}{
+		"name": name, "ssh_port": ports[0], "extra_ports": ports[1:],
+		"volume": volumeName, "password": password, "output": output,
+	}, nil
 }
 
-// ListContainers lists containers on a server.
 func (s *ContainerService) ListContainers(serverID uint) ([]map[string]string, error) {
-	server, cred, err := s.serverService.ResolveServer(serverID)
+	output, err := s.serverService.ExecuteCommand(serverID,
+		"docker ps -a --format '{{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.Ports}}\\t{{.ID}}'")
 	if err != nil {
 		return nil, err
 	}
-
-	return s.dockerService.ListContainers(server.Hostname, server.Port, server.User, server.AuthType, cred)
+	return parseDockerContainers(output), nil
 }
 
-// ContainerAction performs start/stop/restart/delete on a container.
 func (s *ContainerService) ContainerAction(serverID uint, name, action string) error {
 	if !ValidateContainerName(name) {
 		return errors.New("invalid container name")
 	}
-
-	server, cred, err := s.serverService.ResolveServer(serverID)
-	if err != nil {
-		return err
-	}
-
-	dockerAction := action
 	if action == "delete" {
-		// Force remove (stops and removes in one step)
-		dockerAction = "rm -f"
+		action = "rm -f"
 	}
-
-	return s.dockerService.ContainerAction(server.Hostname, server.Port, server.User, server.AuthType, cred, name, dockerAction)
+	_, err := s.serverService.ExecuteCommand(serverID, fmt.Sprintf("docker %s %s", action, name))
+	return err
 }
 
-// GetContainerLogs gets logs from a container.
 func (s *ContainerService) GetContainerLogs(serverID uint, name string, tail int) (string, error) {
 	if !ValidateContainerName(name) {
 		return "", errors.New("invalid container name")
@@ -268,55 +160,24 @@ func (s *ContainerService) GetContainerLogs(serverID uint, name string, tail int
 	if tail <= 0 {
 		tail = 100
 	}
-
-	server, cred, err := s.serverService.ResolveServer(serverID)
-	if err != nil {
-		return "", err
-	}
-
-	return s.dockerService.GetContainerLogs(server.Hostname, server.Port, server.User, server.AuthType, cred, name, tail)
+	return s.serverService.ExecuteCommand(serverID, fmt.Sprintf("docker logs --tail %d %s", tail, name))
 }
 
-// ExecCommand executes a docker command on a server.
-func (s *ContainerService) ExecCommand(serverID uint, command string) (string, error) {
-	if !ValidateDockerCommand(command) {
-		return "", errors.New("only docker commands are allowed")
-	}
-
-	server, cred, err := s.serverService.ResolveServer(serverID)
-	if err != nil {
-		return "", err
-	}
-
-	return s.dockerService.ExecuteCommand(server.Hostname, server.Port, server.User, server.AuthType, cred, command)
-}
-
-// ListVolumes lists volumes on a server.
 func (s *ContainerService) ListVolumes(serverID uint) ([]map[string]string, error) {
-	server, cred, err := s.serverService.ResolveServer(serverID)
+	output, err := s.serverService.ExecuteCommand(serverID,
+		"docker volume ls --format '{{.Name}}\\t{{.Driver}}\\t{{.Mountpoint}}'")
 	if err != nil {
 		return nil, err
 	}
-
-	return s.dockerService.ListVolumes(server.Hostname, server.Port, server.User, server.AuthType, cred)
+	return parseDockerVolumes(output), nil
 }
 
-// CreateVolumeSingle creates a volume on a server.
 func (s *ContainerService) CreateVolumeSingle(serverID uint, name string) error {
-	server, cred, err := s.serverService.ResolveServer(serverID)
-	if err != nil {
-		return err
-	}
-
-	return s.dockerService.CreateVolume(server.Hostname, server.Port, server.User, server.AuthType, cred, name)
+	_, err := s.serverService.ExecuteCommand(serverID, fmt.Sprintf("docker volume create '%s'", name))
+	return err
 }
 
-// RemoveVolume removes a volume on a server.
 func (s *ContainerService) RemoveVolume(serverID uint, name string) error {
-	server, cred, err := s.serverService.ResolveServer(serverID)
-	if err != nil {
-		return err
-	}
-
-	return s.dockerService.RemoveVolume(server.Hostname, server.Port, server.User, server.AuthType, cred, name)
+	_, err := s.serverService.ExecuteCommand(serverID, fmt.Sprintf("docker volume rm '%s'", name))
+	return err
 }

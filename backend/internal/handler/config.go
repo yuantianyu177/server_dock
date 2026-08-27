@@ -4,72 +4,51 @@ import (
 	"net/http"
 
 	"serverdock/internal/dto"
-	"serverdock/internal/pkg"
 	"serverdock/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type ConfigHandler struct {
-	configService *service.ConfigService
-	emailService  service.EmailService
+	service   *service.ConfigService
+	sendEmail func(to, subject, body string) error
 }
 
-func NewConfigHandler(configService *service.ConfigService, emailService service.EmailService) *ConfigHandler {
-	return &ConfigHandler{configService: configService, emailService: emailService}
-}
-
-func (h *ConfigHandler) List(c *gin.Context) {
-	items, err := h.configService.List()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
-		return
-	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(items))
+func NewConfigHandler(configService *service.ConfigService, sendEmail func(string, string, string) error) *ConfigHandler {
+	return &ConfigHandler{service: configService, sendEmail: sendEmail}
 }
 
 func (h *ConfigHandler) GetAll(c *gin.Context) {
-	m, err := h.configService.GetAllAsMap()
+	config, err := h.service.GetAllAsMap()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, pkg.SuccessResponse(m))
+	c.JSON(http.StatusOK, config)
 }
 
 func (h *ConfigHandler) Update(c *gin.Context) {
-	key := c.Param("key")
-	if key == "" {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "key is required"))
+	var request dto.UpdateConfigRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-
-	var req dto.UpdateConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "invalid request: "+err.Error()))
+	if err := h.service.Set(c.Param("key"), request.Value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	if err := h.configService.Set(key, req.Value); err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, err.Error()))
-		return
-	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(nil))
+	c.Status(http.StatusNoContent)
 }
 
 func (h *ConfigHandler) TestEmail(c *gin.Context) {
-	adminEmail := h.configService.Get("admin_email")
-	if adminEmail == "" {
-		c.JSON(http.StatusBadRequest, pkg.ErrorResponse(400, "admin_email not configured"))
+	to := h.service.Get("admin_email")
+	if to == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "admin_email not configured"})
 		return
 	}
-
-	err := h.emailService.Send(adminEmail, "ServerDock Test Email", "<h2>Test Email</h2><p>SMTP configuration is working correctly.</p>")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, pkg.ErrorResponse(500, "failed to send test email: "+err.Error()))
+	if err := h.sendEmail(to, "ServerDock Test Email", "<h2>Test Email</h2><p>SMTP configuration is working correctly.</p>"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send test email: " + err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, pkg.SuccessResponse(gin.H{"message": "test email sent to " + adminEmail}))
+	c.JSON(http.StatusOK, gin.H{"message": "test email sent to " + to})
 }

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { auth } from '@/stores/auth'
 
 const routes = [
   {
@@ -23,11 +23,6 @@ const routes = [
         path: 'servers',
         name: 'Servers',
         component: () => import('@/views/ServersView.vue')
-      },
-      {
-        path: 'servers/:id',
-        name: 'ServerDetail',
-        component: () => import('@/views/ServerDetailView.vue')
       },
       {
         path: 'containers',
@@ -73,7 +68,6 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const auth = useAuthStore()
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'Login', query: { redirect: to.fullPath } }
   }

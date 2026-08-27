@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { serversApi } from '@/api/servers'
+import { del, get, post, put } from '@/api/client'
 import { useToast } from '@/composables/useToast'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -36,7 +36,7 @@ const form = ref(defaultForm())
 async function loadServers() {
   loading.value = true
   try {
-    servers.value = await serversApi.list() || []
+    servers.value = await get('/servers') || []
   } catch (e) {
     servers.value = []
     toast.error(e.message)
@@ -74,10 +74,10 @@ async function saveServer() {
   formError.value = ''
   try {
     if (editTarget.value) {
-      await serversApi.update(editTarget.value.id, form.value)
+      await put(`/servers/${editTarget.value.id}`, form.value)
       toast.success('Server updated successfully')
     } else {
-      await serversApi.create(form.value)
+      await post('/servers', form.value)
       toast.success('Server added successfully')
     }
     showModal.value = false
@@ -104,7 +104,7 @@ async function testConnection() {
   try {
     if (f.credential) {
       // Use form data directly
-      await serversApi.testConnectionDirect({
+      await post('/servers/test-direct', {
         hostname: f.hostname,
         port: f.port || 22,
         user: f.user,
@@ -113,7 +113,7 @@ async function testConnection() {
       })
     } else {
       // Editing without new credential, test with saved credential
-      await serversApi.testConnection(editTarget.value.id)
+      await post(`/servers/${editTarget.value.id}/test`)
     }
     testResult.value = { ok: true, msg: 'Connection successful.' }
   } catch (e) {
@@ -126,7 +126,7 @@ async function testConnection() {
 async function deleteServer() {
   deleteLoading.value = true
   try {
-    await serversApi.delete(confirmDelete.value.id)
+    await del(`/servers/${confirmDelete.value.id}`)
     confirmDelete.value = null
     toast.success('Server deleted')
     loadServers()
@@ -190,7 +190,7 @@ onMounted(loadServers)
           <tbody>
             <tr v-for="srv in servers" :key="srv.id">
               <td>
-                <button class="server-name-btn" @click="router.push(`/servers/${srv.id}`)">
+                <button class="server-name-btn" @click="router.push({ path: '/containers', query: { server: srv.id } })">
                   {{ srv.host }}
                 </button>
               </td>

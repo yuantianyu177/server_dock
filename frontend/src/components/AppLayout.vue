@@ -1,10 +1,9 @@
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { auth } from '@/stores/auth'
 import AppSidebar from './AppSidebar.vue'
 
-const auth = useAuthStore()
 const route = useRoute()
 const sidebarOpen = ref(false)
 
@@ -14,8 +13,6 @@ function closeSidebar() {
   sidebarOpen.value = false
 }
 
-// Close sidebar on route change (mobile)
-import { watch } from 'vue'
 watch(() => route.path, () => {
   sidebarOpen.value = false
 })

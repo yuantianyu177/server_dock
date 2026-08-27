@@ -13,5 +13,5 @@ type Application struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	Server         Server `gorm:"foreignKey:ServerID;references:ID"`
-	Image          Image  `gorm:"foreignKey:ImageID;references:ID"`
+	Image          Image  `gorm:"-"`
 }
