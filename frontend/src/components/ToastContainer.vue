@@ -103,9 +103,9 @@ const icons = { success: CircleCheck, error: CircleAlert, warning: TriangleAlert
 
 @media (max-width: 640px) {
   .toast-stack {
-    top: auto;
+    top: max(12px, env(safe-area-inset-top));
     right: 12px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: auto;
     left: 12px;
     width: auto;
   }

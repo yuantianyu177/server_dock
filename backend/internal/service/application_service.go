@@ -175,26 +175,24 @@ func (s *ApplicationService) ListPublicServers() ([]dto.PublicServerInfo, error)
 
 	for i, server := range servers {
 		result[i] = dto.PublicServerInfo{ID: server.ID, Host: server.Host, Description: server.Description}
-		waitGroup.Add(1)
-		go func(index int, serverID uint) {
-			defer waitGroup.Done()
+		waitGroup.Go(func() {
 			concurrency <- struct{}{}
 			defer func() { <-concurrency }()
 
-			containers, listErr := s.containerService.ListContainers(serverID)
+			containers, listErr := s.containerService.ListContainers(server.ID)
 			if listErr != nil {
 				return
 			}
 
-			result[index].LoadAvailable = true
-			result[index].TotalContainers = len(containers)
+			result[i].LoadAvailable = true
+			result[i].TotalContainers = len(containers)
 			for _, container := range containers {
 				status := strings.ToLower(strings.TrimSpace(container["status"]))
 				if strings.HasPrefix(status, "up") {
-					result[index].RunningContainers++
+					result[i].RunningContainers++
 				}
 			}
-		}(i, server.ID)
+		})
 	}
 
 	waitGroup.Wait()

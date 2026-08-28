@@ -3,7 +3,6 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   Box,
   CircleAlert,
-  CircleCheck,
   KeyRound,
   Mail,
   Network,
@@ -28,8 +27,6 @@ const dirty = ref(false)
 
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
 const passwordLoading = ref(false)
-const passwordError = ref('')
-const passwordSuccess = ref(false)
 
 const sections = [
   {
@@ -101,11 +98,11 @@ function markDirty() {
 async function saveAll() {
   saving.value = true
   try {
-    for (const key of configKeys) {
-      if (config.value[key] !== undefined && config.value[key] !== null) {
-        await put(`/config/${key}`, { value: String(config.value[key]) })
-      }
-    }
+    const updates = configKeys
+      .filter(key => config.value[key] !== undefined && config.value[key] !== null)
+      .map(key => put(`/config/${key}`, { value: String(config.value[key]) }))
+
+    await Promise.all(updates)
     dirty.value = false
     toast.success('已保存系统设置')
   } catch (error) {
@@ -128,18 +125,16 @@ async function testEmail() {
 }
 
 async function changePassword() {
-  passwordError.value = ''
-  passwordSuccess.value = false
   if (!passwordForm.value.oldPassword) {
-    passwordError.value = '请输入当前密码。'
+    toast.warning('请输入当前密码')
     return
   }
   if (passwordForm.value.newPassword.length < 6) {
-    passwordError.value = '新密码至少需要 6 个字符。'
+    toast.warning('新密码至少需要 6 个字符')
     return
   }
   if (passwordForm.value.newPassword !== passwordForm.value.confirm) {
-    passwordError.value = '两次输入的新密码不一致。'
+    toast.warning('两次输入的新密码不一致')
     return
   }
 
@@ -150,10 +145,9 @@ async function changePassword() {
       new_password: passwordForm.value.newPassword
     })
     passwordForm.value = { oldPassword: '', newPassword: '', confirm: '' }
-    passwordSuccess.value = true
     toast.success('管理员密码已更新')
   } catch (error) {
-    passwordError.value = `无法更新密码：${error.message}`
+    toast.error(`无法更新密码：${error.message}`)
   } finally {
     passwordLoading.value = false
   }
@@ -287,9 +281,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             </div>
 
             <template v-if="section.id === 'security'">
-              <div v-if="passwordError" class="password-alert alert alert-error" role="alert"><CircleAlert :size="17" />{{ passwordError }}</div>
-              <div v-if="passwordSuccess" class="password-alert alert alert-success" role="status"><CircleCheck :size="17" />密码已更新。</div>
-
               <div class="setting-row">
                 <div class="setting-copy"><label class="setting-label" for="current-password">当前密码</label></div>
                 <div class="setting-control"><input id="current-password" v-model="passwordForm.oldPassword" type="password" class="form-input config-input" autocomplete="current-password" /></div>
@@ -504,10 +495,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
   font-size: 11px;
 }
 
-.password-alert {
-  margin: 14px 16px 0;
-}
-
 .button-spinner,
 .small-spinner {
   width: 13px;
@@ -547,6 +534,72 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 }
 
 @media (max-width: 680px) {
+  .config-layout {
+    gap: 18px;
+  }
+
+  .settings-nav {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    gap: 5px;
+    margin: 0 -10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(171, 189, 198, 0.55);
+    background: rgba(238, 243, 246, 0.92);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .settings-nav-item {
+    min-height: 38px;
+    padding: 0 11px;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    font-size: 12px;
+  }
+
+  .settings-nav-item.active {
+    border-color: rgba(171, 189, 198, 0.62);
+    background: #fff;
+    color: var(--mobile-ink);
+    box-shadow: 0 2px 8px rgba(26, 56, 69, 0.07);
+  }
+
+  .settings-content {
+    gap: 25px;
+  }
+
+  .settings-section {
+    scroll-margin-top: 64px;
+  }
+
+  .settings-heading {
+    grid-template-columns: 32px 1fr;
+    gap: 9px;
+    margin-bottom: 9px;
+  }
+
+  .settings-heading-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .settings-heading h2 {
+    font-size: 15px;
+  }
+
+  .settings-heading p {
+    font-size: 11px;
+  }
+
+  .settings-panel {
+    border-color: rgba(171, 189, 198, 0.66);
+    border-radius: 16px;
+    box-shadow: 0 3px 14px rgba(26, 56, 69, 0.045);
+  }
+
   .setting-row {
     grid-template-columns: 1fr;
     gap: 9px;
@@ -563,7 +616,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
   }
 
   .unsaved-indicator {
-    width: 100%;
+    margin-right: auto;
   }
 }
 </style>

@@ -160,10 +160,16 @@ onBeforeUnmount(() => {
       <button class="back-button" type="button" aria-label="返回容器管理" @click="goBack">
         <ArrowLeft :size="17" aria-hidden="true" />
       </button>
-      <span class="sr-only" aria-live="polite">{{ statusMessage }}</span>
+      <div class="terminal-context">
+        <strong>{{ containerName || `服务器 ${serverId}` }}</strong>
+        <span :class="`is-${status}`" aria-live="polite">
+          <i aria-hidden="true" />{{ statusMessage }}
+        </span>
+      </div>
       <button v-if="status === 'disconnected'" class="reconnect-button" type="button" @click="reconnect">
         <RefreshCw :size="14" aria-hidden="true" />重新连接
       </button>
+      <span v-else class="toolbar-end" aria-hidden="true" />
     </header>
 
     <div v-if="initError" class="terminal-error" role="alert">{{ initError }}</div>
@@ -185,13 +191,59 @@ onBeforeUnmount(() => {
 
 .terminal-toolbar {
   min-height: 50px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 8px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: #1d1e22;
   color: #fff;
+}
+
+.terminal-context {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.terminal-context strong {
+  overflow: hidden;
+  color: #f5f5f7;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-context span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #a1a1a6;
+  font-size: 10px;
+}
+
+.terminal-context i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffbd45;
+}
+
+.terminal-context .is-connected i {
+  background: #4dcc77;
+}
+
+.terminal-context .is-disconnected i {
+  background: #ff6961;
+}
+
+.toolbar-end {
+  width: 34px;
 }
 
 .back-button {
@@ -253,8 +305,29 @@ onBeforeUnmount(() => {
 
 @media (max-width: 660px) {
   .terminal-toolbar {
-    min-height: 48px;
-    padding: 6px 9px;
+    min-height: calc(54px + env(safe-area-inset-top));
+    gap: 8px;
+    padding: max(6px, env(safe-area-inset-top)) 9px 6px;
+  }
+
+  .terminal-context {
+    align-items: flex-start;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .terminal-context strong {
+    max-width: 100%;
+    font-size: 11px;
+  }
+
+  .terminal-context span {
+    font-size: 9px;
+  }
+
+  .reconnect-button {
+    min-height: 34px;
   }
 
   .terminal-canvas {

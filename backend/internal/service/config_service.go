@@ -1,6 +1,8 @@
 package service
 
 import (
+	"maps"
+
 	"serverdock/internal/model"
 
 	"gorm.io/gorm"
@@ -47,10 +49,7 @@ func (s *ConfigService) GetAllAsMap() (map[string]string, error) {
 	if err := s.db.Find(&configs).Error; err != nil {
 		return nil, err
 	}
-	result := make(map[string]string, len(defaultConfigs))
-	for key, value := range defaultConfigs {
-		result[key] = value
-	}
+	result := maps.Clone(defaultConfigs)
 	for _, config := range configs {
 		result[config.Key] = config.Value
 	}

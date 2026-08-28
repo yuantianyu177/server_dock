@@ -398,32 +398,77 @@ async function handleLogin() {
 
 @media (max-width: 520px) {
   .login-page {
-    padding: 0 16px;
+    padding: 0 12px;
+    background: var(--mobile-canvas);
   }
 
   .public-header {
-    min-height: 64px;
+    width: auto;
+    min-height: calc(62px + env(safe-area-inset-top));
+    margin-right: -12px;
+    margin-left: -12px;
+    padding: env(safe-area-inset-top) 12px 0;
+    border-bottom-color: rgba(173, 207, 218, 0.2);
+    background: var(--mobile-dock);
+  }
+
+  .public-brand {
+    gap: 8px;
+    color: #fff;
+    font-size: 16px;
+  }
+
+  .application-link {
+    color: #76d2e8;
+    font-size: 12px;
   }
 
   .login-main {
     display: block;
-    padding: 32px 0 42px;
+    padding: 18px 0 36px;
   }
 
   .login-context {
-    margin-bottom: 28px;
+    margin-bottom: 12px;
+    padding: 20px;
+    border-radius: 20px;
+    background: var(--mobile-dock);
+    box-shadow: 0 10px 28px rgba(18, 37, 47, 0.14);
+  }
+
+  .context-kicker {
+    margin-bottom: 7px;
+    color: #76d2e8;
+    font-family: var(--font-mono);
+    font-size: 9px;
   }
 
   .login-context h1 {
-    font-size: 30px;
+    color: #fff;
+    font-size: 27px;
   }
 
   .context-description {
-    font-size: 14px;
+    margin-top: 9px;
+    color: #b4c4cb;
+    font-size: 12px;
+    line-height: 1.55;
   }
 
   .login-panel {
     padding: 24px 20px;
+    border-color: rgba(171, 189, 198, 0.66);
+    border-radius: 20px;
+    box-shadow: 0 6px 22px rgba(26, 56, 69, 0.07);
+  }
+
+  .panel-icon {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 18px;
+    border-radius: 11px;
+    background: var(--mobile-dock);
+    color: #76d2e8;
   }
 }
 </style>

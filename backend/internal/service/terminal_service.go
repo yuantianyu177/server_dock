@@ -41,46 +41,42 @@ func (t *TerminalService) CreateSession(serverID uint, command string) (*Termina
 		client.Close()
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
+	closeSession := func() {
+		session.Close()
+		client.Close()
+	}
 
-	// Request PTY
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          1,
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
 	if err := session.RequestPty("xterm-256color", 40, 120, modes); err != nil {
-		session.Close()
-		client.Close()
+		closeSession()
 		return nil, fmt.Errorf("failed to request PTY: %w", err)
 	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		session.Close()
-		client.Close()
+		closeSession()
 		return nil, err
 	}
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		session.Close()
-		client.Close()
+		closeSession()
 		return nil, err
 	}
 
-	// Start shell or command
+	var startErr error
 	if command != "" {
-		if err := session.Start(command); err != nil {
-			session.Close()
-			client.Close()
-			return nil, err
-		}
+		startErr = session.Start(command)
 	} else {
-		if err := session.Shell(); err != nil {
-			session.Close()
-			client.Close()
-			return nil, err
-		}
+		startErr = session.Shell()
+	}
+	if startErr != nil {
+		closeSession()
+		return nil, startErr
 	}
 
 	return &TerminalSession{

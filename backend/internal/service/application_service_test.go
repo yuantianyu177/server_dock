@@ -97,6 +97,29 @@ func TestApplicationServiceSubmitNotifiesAdmin(t *testing.T) {
 	}
 }
 
+func TestApplicationServiceSubmitNotifiesAdminForEnglishOnlyName(t *testing.T) {
+	service, email, _ := setupAppService(t)
+	if err := service.configService.Set("admin_email", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := service.Submit(&dto.SubmitApplicationRequest{
+		ApplicantName: "yty", ApplicantEmail: "yty@example.com", ServerID: 1, ImageID: 1,
+	})
+	if err != nil {
+		t.Fatalf("submit application with English-only name: %v", err)
+	}
+	if response.ApplicantName != "yty" {
+		t.Fatalf("unexpected applicant name: %q", response.ApplicantName)
+	}
+	if email.AsyncCalls != 1 || len(email.SentEmails) != 1 {
+		t.Fatalf("expected exactly one admin email, calls=%d emails=%d", email.AsyncCalls, len(email.SentEmails))
+	}
+	if email.SentEmails[0].To != "admin@example.com" || !strings.Contains(email.SentEmails[0].Body, ">yty<") {
+		t.Fatalf("English-only applicant notification is incorrect: %+v", email.SentEmails[0])
+	}
+}
+
 func TestApplicationServiceEmailActions(t *testing.T) {
 	tests := []struct {
 		action string

@@ -1,23 +1,57 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/smtp"
+	"net/textproto"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-type SMTPEmailService struct{ config *ConfigService }
+type smtpSettings struct {
+	host      string
+	port      string
+	username  string
+	password  string
+	recipient string
+	useTLS    bool
+}
 
-const notificationSubject = "ServerDock · 容器通知"
+type smtpDeliveryError struct {
+	stage     string
+	retryable bool
+	err       error
+}
+
+func (e *smtpDeliveryError) Error() string { return fmt.Sprintf("SMTP %s failed: %v", e.stage, e.err) }
+func (e *smtpDeliveryError) Unwrap() error { return e.err }
+
+type SMTPEmailService struct {
+	config  *ConfigService
+	deliver func(smtpSettings, []byte) error
+	sleep   func(time.Duration)
+}
+
+const (
+	notificationSubject  = "ServerDock · 容器通知"
+	smtpMaxAttempts      = 10
+	smtpMaxRetryDelay    = 30 * time.Second
+	smtpDialTimeout      = 10 * time.Second
+	smtpOperationTimeout = 30 * time.Second
+)
 
 func NewSMTPEmailService(config *ConfigService) *SMTPEmailService {
-	return &SMTPEmailService{config: config}
+	return &SMTPEmailService{config: config, deliver: deliverSMTPMessage, sleep: time.Sleep}
 }
 
 func (s *SMTPEmailService) SendAsync(to, subject, body string) {
@@ -32,45 +66,194 @@ func (s *SMTPEmailService) Send(to, subject, body string) error {
 	if s.config.Get("email_enabled") != "true" {
 		return nil
 	}
-	host, port := s.config.Get("smtp_host"), s.config.Get("smtp_port")
-	username, password := s.config.Get("smtp_username"), s.config.Get("smtp_password")
+	settings := smtpSettings{
+		host:      strings.TrimSpace(s.config.Get("smtp_host")),
+		port:      strings.TrimSpace(s.config.Get("smtp_port")),
+		username:  strings.TrimSpace(s.config.Get("smtp_username")),
+		password:  s.config.Get("smtp_password"),
+		recipient: strings.TrimSpace(to),
+		useTLS:    s.config.Get("smtp_use_tls") == "true",
+	}
+	messageID := newEmailMessageID(settings.username, settings.host)
 	encodedSubject := mime.QEncoding.Encode("UTF-8", subject)
 	message := []byte(fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		username, to, encodedSubject, body,
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		settings.username, to, encodedSubject, time.Now().Format(time.RFC1123Z), messageID, body,
 	))
-	auth, address := smtp.PlainAuth("", username, password, host), host+":"+port
-	if s.config.Get("smtp_use_tls") != "true" {
-		return smtp.SendMail(address, auth, username, []string{to}, message)
-	}
 
-	connection, err := tls.Dial("tcp", address, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
-	if err != nil {
-		return fmt.Errorf("TLS dial failed: %w", err)
+	var lastErr error
+	attempts := 0
+	for attempt := 1; attempt <= smtpMaxAttempts; attempt++ {
+		attempts = attempt
+		lastErr = s.deliver(settings, message)
+		if lastErr == nil {
+			if attempt > 1 {
+				slog.Info("Email sent after retry", "to", to, "attempt", attempt, "message_id", messageID)
+			}
+			return nil
+		}
+		if attempt == smtpMaxAttempts || !isRetryableSMTPDelivery(lastErr) {
+			break
+		}
+		delay := smtpRetryDelay(attempt)
+		slog.Warn("Email send attempt failed; retrying", "to", to, "attempt", attempt, "retry_in", delay, "error", lastErr)
+		s.sleep(delay)
 	}
-	defer connection.Close()
-	client, err := smtp.NewClient(connection, host)
+	return fmt.Errorf("email delivery stopped after %d attempt(s): %w", attempts, lastErr)
+}
+
+func smtpRetryDelay(failedAttempt int) time.Duration {
+	if failedAttempt < 1 {
+		return 0
+	}
+	delay := time.Second << (failedAttempt - 1)
+	if delay > smtpMaxRetryDelay {
+		return smtpMaxRetryDelay
+	}
+	return delay
+}
+
+func deliverSMTPMessage(settings smtpSettings, message []byte) error {
+	address := net.JoinHostPort(settings.host, settings.port)
+	var client *smtp.Client
+	var err error
+	if settings.useTLS {
+		client, err = dialSMTPWithTLS(address, settings.host, settings.port, &tls.Config{
+			ServerName: settings.host,
+			MinVersion: tls.VersionTLS12,
+		})
+	} else {
+		client, err = dialPlainSMTP(address, settings.host)
+	}
 	if err != nil {
-		return fmt.Errorf("SMTP client failed: %w", err)
+		return &smtpDeliveryError{stage: "connection", retryable: true, err: err}
 	}
 	defer client.Close()
+
+	auth := smtp.PlainAuth("", settings.username, settings.password, settings.host)
 	if err := client.Auth(auth); err != nil {
-		return fmt.Errorf("SMTP auth failed: %w", err)
+		return smtpCommandDeliveryError("auth", err)
 	}
-	if err := client.Mail(username); err != nil {
-		return err
+	if err := client.Mail(settings.username); err != nil {
+		return smtpCommandDeliveryError("MAIL FROM", err)
 	}
-	if err := client.Rcpt(to); err != nil {
-		return err
+	if err := client.Rcpt(settings.recipient); err != nil {
+		return smtpCommandDeliveryError("RCPT TO", err)
 	}
 	writer, err := client.Data()
 	if err != nil {
-		return err
+		return smtpCommandDeliveryError("DATA", err)
 	}
 	if _, err := writer.Write(message); err != nil {
-		return err
+		return &smtpDeliveryError{stage: "message write", retryable: true, err: err}
 	}
-	return writer.Close()
+	if err := writer.Close(); err != nil {
+		return &smtpDeliveryError{stage: "message commit", retryable: isExplicitTemporarySMTPError(err), err: err}
+	}
+
+	// A successful DATA response means the SMTP server accepted the message.
+	// QUIT only closes the session; retrying after a QUIT failure can duplicate mail.
+	if err := client.Quit(); err != nil {
+		slog.Warn("SMTP session close failed after message acceptance", "host", settings.host, "error", err)
+	}
+	return nil
+}
+
+func dialPlainSMTP(address, host string) (*smtp.Client, error) {
+	connection, err := (&net.Dialer{Timeout: smtpDialTimeout}).Dial("tcp", address)
+	if err != nil {
+		return nil, fmt.Errorf("SMTP dial failed: %w", err)
+	}
+	if err := connection.SetDeadline(time.Now().Add(smtpOperationTimeout)); err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("SMTP deadline failed: %w", err)
+	}
+	client, err := smtp.NewClient(connection, host)
+	if err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("SMTP client failed: %w", err)
+	}
+	return client, nil
+}
+
+func dialSMTPWithTLS(address, host, port string, tlsConfig *tls.Config) (*smtp.Client, error) {
+	dialer := &net.Dialer{Timeout: smtpDialTimeout}
+	if strings.TrimSpace(port) == "465" {
+		connection, err := tls.DialWithDialer(dialer, "tcp", address, tlsConfig)
+		if err != nil {
+			return nil, fmt.Errorf("implicit TLS dial failed: %w", err)
+		}
+		if err := connection.SetDeadline(time.Now().Add(smtpOperationTimeout)); err != nil {
+			connection.Close()
+			return nil, fmt.Errorf("SMTP deadline failed: %w", err)
+		}
+		client, err := smtp.NewClient(connection, host)
+		if err != nil {
+			connection.Close()
+			return nil, fmt.Errorf("SMTP client failed: %w", err)
+		}
+		return client, nil
+	}
+
+	connection, err := dialer.Dial("tcp", address)
+	if err != nil {
+		return nil, fmt.Errorf("SMTP dial failed: %w", err)
+	}
+	if err := connection.SetDeadline(time.Now().Add(smtpOperationTimeout)); err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("SMTP deadline failed: %w", err)
+	}
+	client, err := smtp.NewClient(connection, host)
+	if err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("SMTP client failed: %w", err)
+	}
+	if err := client.StartTLS(tlsConfig); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("SMTP STARTTLS failed: %w", err)
+	}
+	return client, nil
+}
+
+func smtpCommandDeliveryError(stage string, err error) error {
+	return &smtpDeliveryError{stage: stage, retryable: isRetryableSMTPCommandError(err), err: err}
+}
+
+func isRetryableSMTPDelivery(err error) bool {
+	var deliveryErr *smtpDeliveryError
+	return errors.As(err, &deliveryErr) && deliveryErr.retryable
+}
+
+func isRetryableSMTPCommandError(err error) bool {
+	if isExplicitTemporarySMTPError(err) {
+		return true
+	}
+	var smtpErr *textproto.Error
+	if errors.As(err, &smtpErr) {
+		return false
+	}
+	var networkErr net.Error
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &networkErr)
+}
+
+func isExplicitTemporarySMTPError(err error) bool {
+	var smtpErr *textproto.Error
+	return errors.As(err, &smtpErr) && smtpErr.Code >= 400 && smtpErr.Code < 500
+}
+
+func newEmailMessageID(username, host string) string {
+	var value [16]byte
+	domain := strings.TrimSpace(host)
+	if separator := strings.LastIndexByte(username, '@'); separator >= 0 {
+		domain = strings.TrimSpace(username[separator+1:])
+	}
+	if domain == "" || strings.ContainsAny(domain, " <>@\r\n\t") {
+		domain = "serverdock.invalid"
+	}
+	if _, err := rand.Read(value[:]); err == nil {
+		return fmt.Sprintf("<serverdock-%x@%s>", value, domain)
+	}
+	return fmt.Sprintf("<serverdock-%d@%s>", time.Now().UnixNano(), domain)
 }
 
 var approvalEmail = template.Must(template.New("approval").Parse(emailStart + `

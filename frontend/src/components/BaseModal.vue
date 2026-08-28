@@ -227,14 +227,29 @@ onBeforeUnmount(() => {
   .modal-sm,
   .modal-md,
   .modal-lg {
+    position: relative;
     width: 100%;
     max-width: none;
-    max-height: min(92vh, 820px);
-    border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+    max-height: min(92dvh, 820px);
+    border-radius: 24px 24px 0 0;
+  }
+
+  .modal-box::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    z-index: 1;
+    width: 38px;
+    height: 4px;
+    border-radius: 4px;
+    background: #d7e0e4;
+    transform: translateX(-50%);
   }
 
   .modal-header {
-    min-height: 56px;
+    min-height: 64px;
+    padding-top: 20px;
     padding-right: 14px;
     padding-left: 18px;
   }
@@ -246,6 +261,11 @@ onBeforeUnmount(() => {
   .modal-footer {
     padding: 12px 18px max(12px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
+  }
+
+  .modal-footer :deep(.btn) {
+    min-width: 112px;
+    flex: 1 1 auto;
   }
 }
 </style>

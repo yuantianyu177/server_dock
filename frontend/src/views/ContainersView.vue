@@ -16,10 +16,11 @@ import {
   X
 } from '@lucide/vue'
 import { get, post } from '@/api/client'
+import { useListSelection } from '@/composables/useListSelection'
 import { useToast } from '@/composables/useToast'
 import { useServerSelection } from '@/composables/useServerSelection'
-import { runSettledBatch } from '@/utils/batch'
-import { formatIPv4Ports } from '@/utils/docker'
+import { runSettledBatch, summarizeBatchResults } from '@/utils/batch'
+import { formatIPv4Ports, isContainerRunning, summarizeContainers } from '@/utils/docker'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -52,12 +53,10 @@ const availableImagesLoading = ref(false)
 const createModal = ref(false)
 const containerForm = ref({ name: '', image: '' })
 const formLoading = ref(false)
-const formError = ref('')
 
 const confirmAction = ref(null)
 const actionLoading = ref(false)
 const directActionKey = ref('')
-const selectedContainerNames = ref([])
 const batchConfirmAction = ref('')
 
 const actionLabels = {
@@ -67,15 +66,12 @@ const actionLabels = {
   delete: '删除'
 }
 
-const summary = computed(() => ({
-  total: containers.value.length,
-  running: containers.value.filter(container => container.status?.toLowerCase().startsWith('up')).length
-}))
+const summary = computed(() => summarizeContainers(containers.value))
 
 const filteredContainers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   return containers.value.filter(container => {
-    const running = container.status?.toLowerCase().startsWith('up')
+    const running = isContainerRunning(container)
     const matchesStatus = statusFilter.value === 'all' || (statusFilter.value === 'running' ? running : !running)
     const matchesQuery = !query || [container.name, container.image, container.ports, container.status]
       .some(value => String(value || '').toLowerCase().includes(query))
@@ -84,12 +80,15 @@ const filteredContainers = computed(() => {
 })
 
 const visibleContainerNames = computed(() => filteredContainers.value.map(container => container.name))
-const allVisibleSelected = computed(() =>
-  visibleContainerNames.value.length > 0 && visibleContainerNames.value.every(name => selectedContainerNames.value.includes(name))
-)
-const someVisibleSelected = computed(() =>
-  !allVisibleSelected.value && visibleContainerNames.value.some(name => selectedContainerNames.value.includes(name))
-)
+const {
+  selectedItems: selectedContainerNames,
+  allVisibleSelected,
+  someVisibleSelected,
+  setItemSelected: setContainerSelected,
+  toggleVisibleItems: toggleVisibleContainers,
+  retainAvailableItems: retainAvailableContainerNames,
+  clearSelection: clearContainerSelection
+} = useListSelection(visibleContainerNames)
 
 async function loadContainers() {
   if (!selectedServerId.value) {
@@ -107,8 +106,7 @@ async function loadContainers() {
     const result = await get(`/servers/${serverId}/containers`) || []
     if (Number(selectedServerId.value) !== serverId) return
     containers.value = result
-    const availableNames = new Set(result.map(container => container.name))
-    selectedContainerNames.value = selectedContainerNames.value.filter(name => availableNames.has(name))
+    retainAvailableContainerNames(result.map(container => container.name))
     lensState.value = 'online'
   } catch (error) {
     if (Number(selectedServerId.value) !== serverId) return
@@ -124,7 +122,6 @@ async function loadAvailableImages() {
   if (!selectedServerId.value) return
   const serverId = Number(selectedServerId.value)
   availableImagesLoading.value = true
-  formError.value = ''
   try {
     const result = await get('/images', { server_id: serverId }) || []
     if (Number(selectedServerId.value) !== serverId) return
@@ -132,7 +129,7 @@ async function loadAvailableImages() {
   } catch (error) {
     if (Number(selectedServerId.value) !== serverId) return
     availableImages.value = []
-    formError.value = `无法读取可用镜像：${error.message}`
+    toast.error(`无法读取可用镜像：${error.message}`)
   } finally {
     if (Number(selectedServerId.value) === serverId) availableImagesLoading.value = false
   }
@@ -140,7 +137,6 @@ async function loadAvailableImages() {
 
 function openCreateModal() {
   containerForm.value = { name: '', image: '' }
-  formError.value = ''
   createModal.value = true
   loadAvailableImages()
 }
@@ -170,19 +166,6 @@ async function doContainerAction(container, action) {
   }
 }
 
-function setContainerSelected(name, selected) {
-  selectedContainerNames.value = selected
-    ? [...new Set([...selectedContainerNames.value, name])]
-    : selectedContainerNames.value.filter(item => item !== name)
-}
-
-function toggleVisibleContainers(selected) {
-  const visibleNames = new Set(visibleContainerNames.value)
-  selectedContainerNames.value = selected
-    ? [...new Set([...selectedContainerNames.value, ...visibleNames])]
-    : selectedContainerNames.value.filter(name => !visibleNames.has(name))
-}
-
 function requestBatchContainerAction(action) {
   if (selectedContainerNames.value.length === 0 || actionLoading.value) return
   if (action === 'stop' || action === 'delete') {
@@ -201,15 +184,17 @@ async function doBatchContainerAction(action = batchConfirmAction.value) {
   const results = await runSettledBatch(names, name =>
     post(`/servers/${serverId}/containers/${encodeURIComponent(name)}/action`, { action })
   )
-  const failedNames = names.filter((_, index) => results[index].status === 'rejected')
-  const succeededCount = names.length - failedNames.length
+  const {
+    failedItems: failedNames,
+    succeededCount,
+    firstError
+  } = summarizeBatchResults(names, results)
   selectedContainerNames.value = failedNames
   batchConfirmAction.value = ''
 
   if (failedNames.length === 0) {
     toast.success(`已批量${actionLabels[action]} ${succeededCount} 个容器`)
   } else {
-    const firstError = results.find(result => result.status === 'rejected')?.reason?.message
     const summary = succeededCount > 0
       ? `已${actionLabels[action]} ${succeededCount} 个，${failedNames.length} 个失败`
       : `${failedNames.length} 个容器均未能${actionLabels[action]}`
@@ -240,27 +225,26 @@ async function showLogs(container) {
 async function createContainer() {
   const name = containerForm.value.name.trim()
   if (!name) {
-    formError.value = '请输入容器名称。'
+    toast.warning('请输入容器名称')
     return
   }
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    formError.value = '容器名称只能包含字母、数字、连字符和下划线。'
+    toast.warning('容器名称只能包含字母、数字、连字符和下划线')
     return
   }
   if (!containerForm.value.image) {
-    formError.value = '请选择镜像。'
+    toast.warning('请选择镜像')
     return
   }
 
   formLoading.value = true
-  formError.value = ''
   try {
     await post(`/servers/${selectedServerId.value}/containers`, { ...containerForm.value, name })
     createModal.value = false
     toast.success(`已创建容器“${name}”`)
     await loadContainers()
   } catch (error) {
-    formError.value = `无法创建容器：${error.message}`
+    toast.error(`无法创建容器：${error.message}`)
   } finally {
     formLoading.value = false
   }
@@ -271,10 +255,6 @@ function openTerminal(containerName = '') {
   window.open(`/terminal/${selectedServerId.value}${query}`, '_blank', 'noopener')
 }
 
-function isRunning(container) {
-  return container.status?.toLowerCase().startsWith('up')
-}
-
 function actionIsLoading(container, action) {
   return directActionKey.value === `${container.name}:${action}`
 }
@@ -282,7 +262,7 @@ function actionIsLoading(container, action) {
 watch(selectedServerId, () => {
   searchQuery.value = ''
   statusFilter.value = 'all'
-  selectedContainerNames.value = []
+  clearContainerSelection()
   batchConfirmAction.value = ''
   loadContainers()
 })
@@ -433,7 +413,7 @@ watch(selectedServerId, () => {
                       <ScrollText :size="14" aria-hidden="true" />日志
                     </button>
                     <button
-                      v-if="!isRunning(container)"
+                      v-if="!isContainerRunning(container)"
                       class="btn btn-success btn-sm"
                       type="button"
                       :disabled="actionLoading"
@@ -484,9 +464,6 @@ watch(selectedServerId, () => {
 
     <BaseModal v-if="createModal" title="新建容器" size="md" :close-on-backdrop="!formLoading" @close="!formLoading && (createModal = false)">
       <div class="modal-form">
-        <div v-if="formError" class="alert alert-error" role="alert">
-          <CircleAlert :size="17" aria-hidden="true" />{{ formError }}
-        </div>
         <div class="form-group">
           <label class="form-label" for="container-name">容器名称 <span class="required-mark">*</span></label>
           <input id="container-name" v-model="containerForm.name" class="form-input mono" placeholder="例如：training-zhangsan" autocomplete="off" required />
@@ -652,16 +629,31 @@ watch(selectedServerId, () => {
 }
 
 @media (max-width: 680px) {
+  .bulk-table-tools {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 104px;
+    gap: 8px;
+    overflow: visible;
+  }
+
   .bulk-table-tools .search-field {
-    width: auto;
-    min-width: 112px;
-    flex: 0 0 112px;
+    width: 100%;
+    min-width: 0;
+    flex: none;
   }
 
   .bulk-table-tools .compact-select {
-    width: auto;
-    min-width: 96px;
-    flex: 0 0 96px;
+    width: 104px;
+    min-width: 104px;
+    flex: none;
+  }
+
+  .batch-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--divider-subtle);
   }
 
   .batch-count {
@@ -677,7 +669,7 @@ watch(selectedServerId, () => {
   }
 
   .batch-actions .btn {
-    width: 30px;
+    width: 34px;
     padding: 0;
   }
 

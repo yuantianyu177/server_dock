@@ -28,14 +28,9 @@ func (s *AuthService) Login(username, password string) (string, error) {
 	return s.generateToken(admin.ID, admin.Username)
 }
 
-func (s *AuthService) getAdminByID(id uint) (*model.Admin, error) {
-	var admin model.Admin
-	return &admin, s.db.First(&admin, id).Error
-}
-
 func (s *AuthService) ChangePassword(adminID uint, oldPassword, newPassword string) error {
-	admin, err := s.getAdminByID(adminID)
-	if err != nil {
+	var admin model.Admin
+	if err := s.db.First(&admin, adminID).Error; err != nil {
 		return errors.New("admin not found")
 	}
 	if !pkg.CheckPassword(oldPassword, admin.PasswordHash) {

@@ -6,7 +6,7 @@ defineProps({
 </script>
 
 <template>
-  <header class="page-header">
+  <header class="page-header" :class="{ 'has-actions': $slots.actions }">
     <div class="page-heading">
       <h1 class="page-title">{{ title }}</h1>
       <p v-if="description" class="page-subtitle">{{ description }}</p>

@@ -97,15 +97,12 @@ func (s *ContainerService) CreateContainer(serverID uint, name, image, extraArgs
 
 	var ssOutput, dockerOutput string
 	var probes sync.WaitGroup
-	probes.Add(2)
-	go func() {
-		defer probes.Done()
+	probes.Go(func() {
 		ssOutput, _ = execute("ss -tlnp")
-	}()
-	go func() {
-		defer probes.Done()
+	})
+	probes.Go(func() {
 		dockerOutput, _ = execute("docker ps --format '{{.Ports}}'")
-	}()
+	})
 	probes.Wait()
 
 	used := parseUsedPorts(ssOutput)

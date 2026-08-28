@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "ServerDock 基础设施控制台",
+  "short_name": "ServerDock",
+  "description": "服务器、容器与基础设施管理控制台",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef3f6",
+  "theme_color": "#12252f",
+  "icons": [
+    {
+      "src": "/serverdock-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/serverdock-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

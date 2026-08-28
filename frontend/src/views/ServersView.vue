@@ -35,8 +35,6 @@ const showModal = ref(false)
 const editTarget = ref(null)
 const formLoading = ref(false)
 const testLoading = ref(false)
-const formError = ref('')
-const testResult = ref(null)
 
 const confirmDelete = ref(null)
 const deleteLoading = ref(false)
@@ -83,8 +81,6 @@ async function loadServers() {
 function openCreate() {
   editTarget.value = null
   form.value = defaultForm()
-  formError.value = ''
-  testResult.value = null
   showModal.value = true
 }
 
@@ -99,8 +95,6 @@ function openEdit(server) {
     credential: '',
     description: server.description || ''
   }
-  formError.value = ''
-  testResult.value = null
   showModal.value = true
 }
 
@@ -121,12 +115,11 @@ function validateForm({ requireCredential = false } = {}) {
 async function saveServer() {
   const validationError = validateForm({ requireCredential: !editTarget.value })
   if (validationError) {
-    formError.value = validationError
+    toast.warning(validationError)
     return
   }
 
   formLoading.value = true
-  formError.value = ''
   try {
     if (editTarget.value) {
       await put(`/servers/${editTarget.value.id}`, form.value)
@@ -138,7 +131,7 @@ async function saveServer() {
     showModal.value = false
     await loadServers()
   } catch (error) {
-    formError.value = `无法保存服务器：${error.message}`
+    toast.error(`无法保存服务器：${error.message}`)
   } finally {
     formLoading.value = false
   }
@@ -147,12 +140,11 @@ async function saveServer() {
 async function testConnection() {
   const validationError = validateForm({ requireCredential: !editTarget.value })
   if (validationError) {
-    testResult.value = { ok: false, message: validationError }
+    toast.warning(validationError)
     return
   }
 
   testLoading.value = true
-  testResult.value = null
   try {
     if (form.value.credential) {
       await post('/servers/test-direct', {
@@ -165,9 +157,9 @@ async function testConnection() {
     } else {
       await post(`/servers/${editTarget.value.id}/test`)
     }
-    testResult.value = { ok: true, message: '连接成功，SSH 凭据可用。' }
+    toast.success('连接成功，SSH 凭据可用')
   } catch (error) {
-    testResult.value = { ok: false, message: `连接失败：${error.message}` }
+    toast.error(`连接失败：${error.message}`)
   } finally {
     testLoading.value = false
   }
@@ -363,13 +355,6 @@ onMounted(loadServers)
       @close="closeServerModal"
     >
       <div class="modal-form">
-        <div v-if="formError" class="alert alert-error" role="alert">
-          <CircleAlert :size="17" aria-hidden="true" />{{ formError }}
-        </div>
-        <div v-if="testResult" class="alert" :class="testResult.ok ? 'alert-success' : 'alert-error'" role="status">
-          {{ testResult.message }}
-        </div>
-
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label" for="server-name">服务器名称 <span class="required-mark">*</span></label>

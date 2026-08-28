@@ -12,9 +12,11 @@ import {
   X
 } from '@lucide/vue'
 import { del, get, post } from '@/api/client'
+import { useListSelection } from '@/composables/useListSelection'
+import { useServerDockerSummary } from '@/composables/useServerDockerSummary'
 import { useToast } from '@/composables/useToast'
 import { useServerSelection } from '@/composables/useServerSelection'
-import { runSettledBatch } from '@/utils/batch'
+import { runSettledBatch, summarizeBatchResults } from '@/utils/batch'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -29,22 +31,19 @@ const {
   serversError,
   loadServers
 } = useServerSelection()
+const { lensState, summary, loadSummary, resetSummary } = useServerDockerSummary(selectedServerId)
 
 const volumes = ref([])
 const volumesLoading = ref(false)
 const volumesError = ref('')
-const lensState = ref('offline')
-const summary = ref({ running: 0, total: 0 })
 const searchQuery = ref('')
 
 const createModal = ref(false)
 const volumeName = ref('')
 const formLoading = ref(false)
-const formError = ref('')
 
 const deleteTarget = ref(null)
 const deleteLoading = ref(false)
-const selectedVolumeNames = ref([])
 const batchDeleteConfirm = ref(false)
 const batchDeleteLoading = ref(false)
 
@@ -60,34 +59,18 @@ const filteredVolumes = computed(() => {
 const visibleVolumeNames = computed(() =>
   filteredVolumes.value.map(volume => volumeValue(volume, 'Name', 'name'))
 )
-const allVisibleSelected = computed(() =>
-  visibleVolumeNames.value.length > 0 && visibleVolumeNames.value.every(name => selectedVolumeNames.value.includes(name))
-)
-const someVisibleSelected = computed(() =>
-  !allVisibleSelected.value && visibleVolumeNames.value.some(name => selectedVolumeNames.value.includes(name))
-)
+const {
+  selectedItems: selectedVolumeNames,
+  allVisibleSelected,
+  someVisibleSelected,
+  setItemSelected: setVolumeSelected,
+  toggleVisibleItems: toggleVisibleVolumes,
+  retainAvailableItems: retainAvailableVolumeNames,
+  clearSelection: clearVolumeSelection
+} = useListSelection(visibleVolumeNames)
 
 function volumeValue(volume, upper, lower, fallback = '—') {
   return volume?.[upper] || volume?.[lower] || fallback
-}
-
-async function loadSummary() {
-  if (!selectedServerId.value) return
-  const serverId = Number(selectedServerId.value)
-  lensState.value = 'offline'
-  try {
-    const containers = await get(`/servers/${serverId}/containers`) || []
-    if (Number(selectedServerId.value) !== serverId) return
-    summary.value = {
-      total: containers.length,
-      running: containers.filter(container => container.status?.toLowerCase().startsWith('up')).length
-    }
-    lensState.value = 'online'
-  } catch {
-    if (Number(selectedServerId.value) !== serverId) return
-    summary.value = { running: 0, total: 0 }
-    lensState.value = 'offline'
-  }
 }
 
 async function loadVolumes() {
@@ -99,8 +82,7 @@ async function loadVolumes() {
     const result = await get(`/servers/${serverId}/volumes`) || []
     if (Number(selectedServerId.value) !== serverId) return
     volumes.value = result
-    const availableNames = new Set(result.map(volume => volumeValue(volume, 'Name', 'name')))
-    selectedVolumeNames.value = selectedVolumeNames.value.filter(name => availableNames.has(name))
+    retainAvailableVolumeNames(result.map(volume => volumeValue(volume, 'Name', 'name')))
   } catch (error) {
     if (Number(selectedServerId.value) !== serverId) return
     volumes.value = []
@@ -116,30 +98,28 @@ function reloadAll() {
 
 function openCreateModal() {
   volumeName.value = ''
-  formError.value = ''
   createModal.value = true
 }
 
 async function createVolume() {
   const name = volumeName.value.trim()
   if (!name) {
-    formError.value = '请输入数据卷名称。'
+    toast.warning('请输入数据卷名称')
     return
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
-    formError.value = '名称需以字母或数字开头，只能包含字母、数字、点、连字符和下划线。'
+    toast.warning('名称需以字母或数字开头，只能包含字母、数字、点、连字符和下划线')
     return
   }
 
   formLoading.value = true
-  formError.value = ''
   try {
     await post(`/servers/${selectedServerId.value}/volumes`, { name })
     createModal.value = false
     toast.success(`已创建数据卷“${name}”`)
     await loadVolumes()
   } catch (error) {
-    formError.value = `无法创建数据卷：${error.message}`
+    toast.error(`无法创建数据卷：${error.message}`)
   } finally {
     formLoading.value = false
   }
@@ -161,19 +141,6 @@ async function deleteVolume() {
   }
 }
 
-function setVolumeSelected(name, selected) {
-  selectedVolumeNames.value = selected
-    ? [...new Set([...selectedVolumeNames.value, name])]
-    : selectedVolumeNames.value.filter(item => item !== name)
-}
-
-function toggleVisibleVolumes(selected) {
-  const visibleNames = new Set(visibleVolumeNames.value)
-  selectedVolumeNames.value = selected
-    ? [...new Set([...selectedVolumeNames.value, ...visibleNames])]
-    : selectedVolumeNames.value.filter(name => !visibleNames.has(name))
-}
-
 async function deleteSelectedVolumes() {
   const names = [...selectedVolumeNames.value]
   if (names.length === 0) return
@@ -183,15 +150,17 @@ async function deleteSelectedVolumes() {
   const results = await runSettledBatch(names, name =>
     del(`/servers/${serverId}/volumes/${encodeURIComponent(name)}`)
   )
-  const failedNames = names.filter((_, index) => results[index].status === 'rejected')
-  const succeededCount = names.length - failedNames.length
+  const {
+    failedItems: failedNames,
+    succeededCount,
+    firstError
+  } = summarizeBatchResults(names, results)
   selectedVolumeNames.value = failedNames
   batchDeleteConfirm.value = false
 
   if (failedNames.length === 0) {
     toast.success(`已批量删除 ${succeededCount} 个数据卷`)
   } else {
-    const firstError = results.find(result => result.status === 'rejected')?.reason?.message
     const summary = succeededCount > 0
       ? `已删除 ${succeededCount} 个，${failedNames.length} 个失败`
       : `${failedNames.length} 个数据卷均未能删除`
@@ -212,13 +181,12 @@ function openTerminal() {
 watch(selectedServerId, id => {
   searchQuery.value = ''
   volumes.value = []
-  selectedVolumeNames.value = []
+  clearVolumeSelection()
   batchDeleteConfirm.value = false
   if (!id) {
     volumesLoading.value = false
     volumesError.value = ''
-    lensState.value = 'offline'
-    summary.value = { running: 0, total: 0 }
+    resetSummary()
     return
   }
   reloadAll()
@@ -342,7 +310,6 @@ watch(selectedServerId, id => {
 
     <BaseModal v-if="createModal" title="新建数据卷" size="sm" :close-on-backdrop="!formLoading" @close="!formLoading && (createModal = false)">
       <div class="modal-form">
-        <div v-if="formError" class="alert alert-error" role="alert"><CircleAlert :size="17" />{{ formError }}</div>
         <div class="form-group">
           <label class="form-label" for="volume-name">数据卷名称 <span class="required-mark">*</span></label>
           <input id="volume-name" v-model="volumeName" class="form-input mono" placeholder="例如：training-data" required @keyup.enter="createVolume" />
@@ -445,9 +412,23 @@ watch(selectedServerId, id => {
 }
 
 @media (max-width: 680px) {
+  .bulk-table-tools {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
   .bulk-table-tools .search-field {
-    width: auto;
-    min-width: 160px;
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .batch-actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--divider-subtle);
   }
 
   .batch-count {
@@ -463,7 +444,7 @@ watch(selectedServerId, id => {
   }
 
   .batch-actions .btn {
-    width: 30px;
+    width: 34px;
     padding: 0;
   }
 

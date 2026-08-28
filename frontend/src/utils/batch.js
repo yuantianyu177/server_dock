@@ -1,4 +1,4 @@
-export async function runSettledBatch(items, task, concurrency = 4) {
+export async function runSettledBatch(items, task, concurrency = 32) {
   const results = new Array(items.length)
   let nextIndex = 0
 
@@ -17,4 +17,15 @@ export async function runSettledBatch(items, task, concurrency = 4) {
   const workerCount = Math.min(Math.max(1, concurrency), items.length)
   await Promise.all(Array.from({ length: workerCount }, worker))
   return results
+}
+
+export function summarizeBatchResults(items, results) {
+  const failedItems = items.filter((_, index) => results[index].status === 'rejected')
+  const firstFailure = results.find(result => result.status === 'rejected')
+
+  return {
+    failedItems,
+    succeededCount: items.length - failedItems.length,
+    firstError: firstFailure?.reason?.message
+  }
 }

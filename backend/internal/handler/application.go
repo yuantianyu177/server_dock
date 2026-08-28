@@ -91,9 +91,10 @@ func (h *ApplicationHandler) Action(c *gin.Context) {
 	}
 
 	status := http.StatusInternalServerError
-	if errors.Is(err, service.ErrApplicationNotFound) {
+	switch {
+	case errors.Is(err, service.ErrApplicationNotFound):
 		status = http.StatusNotFound
-	} else if errors.Is(err, service.ErrApplicationNotPending) {
+	case errors.Is(err, service.ErrApplicationNotPending):
 		status = http.StatusConflict
 	}
 	c.JSON(status, gin.H{"error": err.Error()})

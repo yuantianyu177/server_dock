@@ -2,16 +2,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   ArrowLeft,
-  CircleAlert,
   CircleCheck,
   Mail,
-  RefreshCw,
   Send,
   UserRound
 } from '@lucide/vue'
 import { get, post } from '@/api/client'
+import { useToast } from '@/composables/useToast'
 import BrandMark from '@/components/BrandMark.vue'
 
+const toast = useToast()
 const servers = ref([])
 const images = ref([])
 const serversLoading = ref(false)
@@ -27,7 +27,6 @@ const form = ref({
 })
 
 const submitting = ref(false)
-const submitError = ref('')
 const submittedApplication = ref(null)
 
 const hasServers = computed(() => servers.value.length > 0)
@@ -57,6 +56,7 @@ async function loadServers() {
     servers.value = []
     images.value = []
     serversError.value = `无法读取可申请服务器：${error.message}`
+    toast.error(`${serversError.value}。请刷新页面后重试`)
   } finally {
     serversLoading.value = false
   }
@@ -76,6 +76,7 @@ async function loadImages(serverId) {
   } catch (error) {
     images.value = []
     imagesError.value = `无法读取该服务器的镜像：${error.message}`
+    toast.error(`${imagesError.value}。请重新选择服务器后重试`)
   } finally {
     imagesLoading.value = false
   }
@@ -93,12 +94,11 @@ function validateForm() {
 async function submitApplication() {
   const validationError = validateForm()
   if (validationError) {
-    submitError.value = validationError
+    toast.warning(validationError)
     return
   }
 
   submitting.value = true
-  submitError.value = ''
   try {
     submittedApplication.value = await post('/applications/public/apply', {
       applicant_name: form.value.applicant_name.trim(),
@@ -107,7 +107,7 @@ async function submitApplication() {
       image_id: Number(form.value.image_id)
     })
   } catch (error) {
-    submitError.value = `无法提交申请：${error.message}。请检查填写内容后重试。`
+    toast.error(`无法提交申请：${error.message}。请检查填写内容后重试`)
   } finally {
     submitting.value = false
   }
@@ -117,7 +117,6 @@ function resetApplication() {
   form.value = { applicant_name: '', applicant_email: '', server_id: '', image_id: '' }
   images.value = []
   submittedApplication.value = null
-  submitError.value = ''
 }
 
 function formatServerOption(server) {
@@ -199,12 +198,9 @@ onMounted(loadServers)
         <template v-else>
           <header class="application-heading">
             <h2 id="application-title">容器申请表</h2>
-            <p>所有字段均为必填项。</p>
           </header>
 
           <form class="application-form" @submit.prevent="submitApplication">
-            <div v-if="submitError" class="alert alert-error" role="alert"><CircleAlert :size="17" />{{ submitError }}</div>
-
             <fieldset>
               <legend><UserRound :size="15" aria-hidden="true" />申请人信息</legend>
               <div class="form-group">
@@ -220,12 +216,6 @@ onMounted(loadServers)
 
             <fieldset>
               <legend class="sr-only">容器环境</legend>
-
-              <div v-if="serversError" class="alert alert-error" role="alert">
-                <CircleAlert :size="17" />
-                <span>{{ serversError }}</span>
-                <button class="inline-retry" type="button" @click="loadServers"><RefreshCw :size="13" />重试</button>
-              </div>
 
               <div class="form-group">
                 <label class="form-label" for="application-server">服务器 <span class="required-mark">*</span></label>
@@ -246,8 +236,7 @@ onMounted(loadServers)
                   </option>
                   <option v-for="image in images" :key="image.id" :value="image.id">{{ image.name }}</option>
                 </select>
-                <span v-if="imagesError" class="form-error">{{ imagesError }}</span>
-                <span v-else-if="form.server_id && !imagesLoading && !hasImages" class="form-error">请联系管理员为该服务器登记可申请镜像。</span>
+                <span v-if="!imagesError && form.server_id && !imagesLoading && !hasImages" class="form-error">请联系管理员为该服务器登记可申请镜像。</span>
               </div>
             </fieldset>
 
@@ -432,12 +421,6 @@ onMounted(loadServers)
   letter-spacing: -0.02em;
 }
 
-.application-heading p {
-  margin-top: 4px;
-  color: var(--ink-secondary);
-  font-size: 12px;
-}
-
 .application-form {
   display: flex;
   flex-direction: column;
@@ -463,24 +446,6 @@ legend {
   color: var(--ink);
   font-size: 13px;
   font-weight: 700;
-}
-
-.inline-retry {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  padding: 3px 5px;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.inline-retry:hover {
-  background: rgba(180, 35, 24, 0.08);
 }
 
 .submit-button {
@@ -627,24 +592,103 @@ legend {
 
 @media (max-width: 580px) {
   .apply-page {
-    padding: 0 14px;
+    padding: 0 12px;
+    background: var(--mobile-canvas);
   }
 
   .public-header {
-    min-height: 64px;
+    width: auto;
+    min-height: calc(62px + env(safe-area-inset-top));
+    margin-right: -12px;
+    margin-left: -12px;
+    padding: env(safe-area-inset-top) 12px 0;
+    border-bottom-color: rgba(173, 207, 218, 0.2);
+    background: var(--mobile-dock);
+  }
+
+  .public-brand {
+    gap: 8px;
+    color: #fff;
+    font-size: 16px;
+  }
+
+  .login-link {
+    color: #76d2e8;
+    font-size: 12px;
   }
 
   .apply-main {
-    padding: 30px 0 42px;
+    gap: 12px;
+    padding: 18px 0 36px;
+  }
+
+  .process-panel {
+    padding: 20px;
+    overflow: hidden;
+    border-radius: 20px;
+    background: var(--mobile-dock);
+    box-shadow: 0 10px 28px rgba(18, 37, 47, 0.14);
+  }
+
+  .process-kicker {
+    margin-bottom: 6px;
+    color: #76d2e8;
+    font-family: var(--font-mono);
+    font-size: 9px;
   }
 
   .process-panel h1 {
-    font-size: 28px;
+    color: #fff;
+    font-size: 27px;
+  }
+
+  .process-description {
+    margin-top: 9px;
+    color: #b4c4cb;
+    font-size: 12px;
+    line-height: 1.55;
   }
 
   .process-list {
-    grid-template-columns: 1fr;
-    gap: 13px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 17px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.11);
+  }
+
+  .process-list li {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .step-number {
+    width: 25px;
+    height: 25px;
+    border-color: rgba(118, 210, 232, 0.26);
+    border-radius: 8px;
+    background: rgba(118, 210, 232, 0.09);
+    color: #76d2e8;
+    font-size: 9px;
+  }
+
+  .process-list strong {
+    margin-top: 0;
+    color: #f5fafb;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .process-list div > span {
+    display: none;
+  }
+
+  .application-panel {
+    border-color: rgba(171, 189, 198, 0.66);
+    border-radius: 20px;
+    box-shadow: 0 6px 22px rgba(26, 56, 69, 0.07);
   }
 
   .application-heading,

@@ -51,6 +51,15 @@ function isActive(path) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
+async function navigateAndClose(event, navigate) {
+  const opensNewContext = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+  try {
+    await navigate(event)
+  } finally {
+    if (!opensNewContext) emit('close', false)
+  }
+}
+
 function logout() {
   auth.logout()
   router.push('/login')
@@ -60,30 +69,30 @@ function formatPendingCount(count) {
   return count > 99 ? '99+' : String(count)
 }
 
-function handleVisibilityChange() {
+function refreshPendingCountWhenVisible() {
   if (document.visibilityState === 'visible') refreshPendingCount()
 }
 
 onMounted(() => {
   refreshPendingCount()
-  pendingTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') refreshPendingCount()
-  }, 30000)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
+  pendingTimer = window.setInterval(refreshPendingCountWhenVisible, 30000)
+  document.addEventListener('visibilitychange', refreshPendingCountWhenVisible)
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(pendingTimer)
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  document.removeEventListener('visibilitychange', refreshPendingCountWhenVisible)
 })
 </script>
 
 <template>
   <aside class="sidebar" aria-label="主导航">
     <header class="sidebar-brand">
-      <router-link class="brand-link" to="/servers" aria-label="ServerDock 首页" @click="emit('close')">
-        <BrandMark :size="32" />
-        <span class="brand-name">ServerDock</span>
+      <router-link v-slot="{ href, navigate }" to="/servers" custom>
+        <a class="brand-link" :href="href" aria-label="ServerDock 首页" @click="navigateAndClose($event, navigate)">
+          <BrandMark :size="32" />
+          <span class="brand-name">ServerDock</span>
+        </a>
       </router-link>
       <button class="sidebar-close" type="button" aria-label="关闭导航" @click="emit('close')">
         <X :size="19" aria-hidden="true" />
@@ -97,20 +106,26 @@ onBeforeUnmount(() => {
           v-for="item in group.items"
           :key="item.path"
           :to="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          :aria-current="isActive(item.path) ? 'page' : undefined"
-          @click="emit('close')"
+          custom
+          v-slot="{ href, navigate }"
         >
-          <component :is="item.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-          <span class="nav-item-label">{{ item.label }}</span>
-          <span
-            v-if="item.pendingBadge && pendingCount > 0"
-            class="pending-badge"
-            :aria-label="`${pendingCount} 个待处理申请`"
+          <a
+            :href="href"
+            class="nav-item"
+            :class="{ active: isActive(item.path) }"
+            :aria-current="isActive(item.path) ? 'page' : undefined"
+            @click="navigateAndClose($event, navigate)"
           >
-            {{ formatPendingCount(pendingCount) }}
-          </span>
+            <component :is="item.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+            <span class="nav-item-label">{{ item.label }}</span>
+            <span
+              v-if="item.pendingBadge && pendingCount > 0"
+              class="pending-badge"
+              :aria-label="`${pendingCount} 个待处理申请`"
+            >
+              {{ formatPendingCount(pendingCount) }}
+            </span>
+          </a>
         </router-link>
       </section>
     </nav>
@@ -152,6 +167,7 @@ onBeforeUnmount(() => {
 .sidebar-brand {
   min-height: 68px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   padding: 14px 14px 12px 18px;
@@ -185,9 +201,13 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-nav {
+  min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 5px 10px 16px;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-group + .nav-group {
@@ -215,6 +235,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 550;
   transition: background-color 160ms ease, color 160ms ease;
+  touch-action: manipulation;
 }
 
 .nav-item:hover {
@@ -263,6 +284,7 @@ onBeforeUnmount(() => {
 
 .sidebar-footer {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 8px;
   padding: 12px 10px 14px;
@@ -346,12 +368,54 @@ onBeforeUnmount(() => {
 
 @media (max-width: 820px) {
   .sidebar {
-    width: min(292px, calc(100vw - 48px));
+    width: 100%;
+    height: auto;
+    max-height: min(84dvh, 720px);
     border-right: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 24px 24px 0 0;
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .sidebar::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 38px;
+    height: 4px;
+    border-radius: 4px;
+    background: #d7e0e4;
+    transform: translateX(-50%);
+  }
+
+  .sidebar-brand {
+    min-height: 66px;
+    padding-top: 20px;
+    padding-right: 14px;
+    padding-bottom: 8px;
+    padding-left: 18px;
+  }
+
+  .sidebar-nav {
+    padding-bottom: 12px;
+  }
+
+  .nav-group + .nav-group {
+    margin-top: 12px;
+  }
+
+  .nav-item {
+    min-height: 44px;
+    border-radius: 11px;
   }
 
   .sidebar-close {
     display: grid;
+  }
+
+  .sidebar-footer {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
   }
 }
 </style>

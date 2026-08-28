@@ -133,10 +133,6 @@ async function syncApplications() {
   }
 }
 
-function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') syncApplications()
-}
-
 function isProcessing(application, action) {
   return processingAction.value?.applicationId === application.id && processingAction.value.action === action
 }
@@ -211,12 +207,12 @@ function formatDate(value, detail = false) {
 onMounted(() => {
   loadApplications()
   syncTimer = window.setInterval(syncApplications, applicationSyncInterval)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
+  document.addEventListener('visibilitychange', syncApplications)
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(syncTimer)
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  document.removeEventListener('visibilitychange', syncApplications)
 })
 </script>
 

@@ -12,9 +12,11 @@ import {
   X
 } from '@lucide/vue'
 import { del, get, post } from '@/api/client'
+import { useListSelection } from '@/composables/useListSelection'
+import { useServerDockerSummary } from '@/composables/useServerDockerSummary'
 import { useToast } from '@/composables/useToast'
 import { useServerSelection } from '@/composables/useServerSelection'
-import { runSettledBatch } from '@/utils/batch'
+import { runSettledBatch, summarizeBatchResults } from '@/utils/batch'
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -29,6 +31,7 @@ const {
   serversError,
   loadServers
 } = useServerSelection()
+const { lensState, summary, loadSummary, resetSummary } = useServerDockerSummary(selectedServerId)
 
 const dbImages = ref([])
 const dbImagesLoading = ref(false)
@@ -40,24 +43,17 @@ const remoteLoading = ref(false)
 const remoteError = ref('')
 const remoteSearch = ref('')
 
-const lensState = ref('offline')
-const summary = ref({ running: 0, total: 0 })
-
 const imageModal = ref(false)
 const imageForm = ref({ name: '', image_id: '' })
 const imageFormLoading = ref(false)
-const imageFormError = ref('')
 
 const pullModal = ref(false)
 const pullForm = ref({ image: '', tag: 'latest' })
 const pullLoading = ref(false)
-const pullError = ref('')
 
 const confirmDeleteImage = ref(null)
 const deleteTarget = ref(null)
 const deleteLoading = ref(false)
-const selectedDbImageIds = ref([])
-const selectedRemoteImageIds = ref([])
 const batchDeleteTarget = ref('')
 const batchDeleteLoading = ref(false)
 
@@ -80,40 +76,27 @@ const filteredRemoteImages = computed(() => {
 })
 
 const visibleDbImageIds = computed(() => filteredDbImages.value.map(image => image.id))
-const allVisibleDbSelected = computed(() =>
-  visibleDbImageIds.value.length > 0 && visibleDbImageIds.value.every(id => selectedDbImageIds.value.includes(id))
-)
-const someVisibleDbSelected = computed(() =>
-  !allVisibleDbSelected.value && visibleDbImageIds.value.some(id => selectedDbImageIds.value.includes(id))
-)
 const visibleRemoteImageIds = computed(() =>
   [...new Set(filteredRemoteImages.value.map(image => image.image_id))]
 )
-const allVisibleRemoteSelected = computed(() =>
-  visibleRemoteImageIds.value.length > 0 && visibleRemoteImageIds.value.every(id => selectedRemoteImageIds.value.includes(id))
-)
-const someVisibleRemoteSelected = computed(() =>
-  !allVisibleRemoteSelected.value && visibleRemoteImageIds.value.some(id => selectedRemoteImageIds.value.includes(id))
-)
-
-async function loadSummary() {
-  if (!selectedServerId.value) return
-  const serverId = Number(selectedServerId.value)
-  lensState.value = 'offline'
-  try {
-    const containers = await get(`/servers/${serverId}/containers`) || []
-    if (Number(selectedServerId.value) !== serverId) return
-    summary.value = {
-      total: containers.length,
-      running: containers.filter(container => container.status?.toLowerCase().startsWith('up')).length
-    }
-    lensState.value = 'online'
-  } catch (error) {
-    if (Number(selectedServerId.value) !== serverId) return
-    summary.value = { running: 0, total: 0 }
-    lensState.value = 'offline'
-  }
-}
+const {
+  selectedItems: selectedDbImageIds,
+  allVisibleSelected: allVisibleDbSelected,
+  someVisibleSelected: someVisibleDbSelected,
+  setItemSelected: setDbImageSelected,
+  toggleVisibleItems: toggleVisibleDbImages,
+  retainAvailableItems: retainAvailableDbImageIds,
+  clearSelection: clearDbImageSelection
+} = useListSelection(visibleDbImageIds)
+const {
+  selectedItems: selectedRemoteImageIds,
+  allVisibleSelected: allVisibleRemoteSelected,
+  someVisibleSelected: someVisibleRemoteSelected,
+  setItemSelected: setRemoteImageSelected,
+  toggleVisibleItems: toggleVisibleRemoteImages,
+  retainAvailableItems: retainAvailableRemoteImageIds,
+  clearSelection: clearRemoteImageSelection
+} = useListSelection(visibleRemoteImageIds)
 
 async function loadDbImages() {
   if (!selectedServerId.value) return
@@ -124,8 +107,7 @@ async function loadDbImages() {
     const result = await get('/images', { server_id: serverId }) || []
     if (Number(selectedServerId.value) !== serverId) return
     dbImages.value = result
-    const availableIds = new Set(result.map(image => image.id))
-    selectedDbImageIds.value = selectedDbImageIds.value.filter(id => availableIds.has(id))
+    retainAvailableDbImageIds(result.map(image => image.id))
   } catch (error) {
     if (Number(selectedServerId.value) !== serverId) return
     dbImages.value = []
@@ -144,8 +126,7 @@ async function loadRemoteImages() {
     const result = await get(`/servers/${serverId}/images`) || []
     if (Number(selectedServerId.value) !== serverId) return
     remoteImages.value = result
-    const availableIds = new Set(result.map(image => image.image_id))
-    selectedRemoteImageIds.value = selectedRemoteImageIds.value.filter(id => availableIds.has(id))
+    retainAvailableRemoteImageIds(result.map(image => image.image_id))
   } catch (error) {
     if (Number(selectedServerId.value) !== serverId) return
     remoteImages.value = []
@@ -166,24 +147,22 @@ function formatRemoteImageAddress(image) {
 
 function openImageModal() {
   imageForm.value = { name: '', image_id: '' }
-  imageFormError.value = ''
   imageModal.value = true
   if (!remoteImages.value.length && !remoteLoading.value) loadRemoteImages()
 }
 
 async function saveDbImage() {
   if (!imageForm.value.name.trim()) {
-    imageFormError.value = '请输入展示名称。'
+    toast.warning('请输入展示名称')
     return
   }
   const selectedImage = remoteImages.value.find(image => image.image_id === imageForm.value.image_id)
   if (!selectedImage) {
-    imageFormError.value = '请选择服务器上已有的镜像。'
+    toast.warning('请选择服务器上已有的镜像')
     return
   }
 
   imageFormLoading.value = true
-  imageFormError.value = ''
   try {
     await post('/images', {
       server_id: selectedServerId.value,
@@ -195,7 +174,7 @@ async function saveDbImage() {
     toast.success(`已登记可申请镜像“${imageForm.value.name.trim()}”`)
     await loadDbImages()
   } catch (error) {
-    imageFormError.value = `无法登记镜像：${error.message}`
+    toast.error(`无法登记镜像：${error.message}`)
   } finally {
     imageFormLoading.value = false
   }
@@ -228,32 +207,6 @@ async function deleteImage() {
   }
 }
 
-function setDbImageSelected(id, selected) {
-  selectedDbImageIds.value = selected
-    ? [...new Set([...selectedDbImageIds.value, id])]
-    : selectedDbImageIds.value.filter(item => item !== id)
-}
-
-function toggleVisibleDbImages(selected) {
-  const visibleIds = new Set(visibleDbImageIds.value)
-  selectedDbImageIds.value = selected
-    ? [...new Set([...selectedDbImageIds.value, ...visibleIds])]
-    : selectedDbImageIds.value.filter(id => !visibleIds.has(id))
-}
-
-function setRemoteImageSelected(id, selected) {
-  selectedRemoteImageIds.value = selected
-    ? [...new Set([...selectedRemoteImageIds.value, id])]
-    : selectedRemoteImageIds.value.filter(item => item !== id)
-}
-
-function toggleVisibleRemoteImages(selected) {
-  const visibleIds = new Set(visibleRemoteImageIds.value)
-  selectedRemoteImageIds.value = selected
-    ? [...new Set([...selectedRemoteImageIds.value, ...visibleIds])]
-    : selectedRemoteImageIds.value.filter(id => !visibleIds.has(id))
-}
-
 function requestBatchDelete(target) {
   const selectedIds = target === 'db' ? selectedDbImageIds.value : selectedRemoteImageIds.value
   if (selectedIds.length === 0 || imageActionLoading.value) return
@@ -271,8 +224,11 @@ async function deleteSelectedImages() {
     ? del(`/images/${id}`)
     : del(`/servers/${serverId}/images/${encodeURIComponent(id)}`)
   )
-  const failedIds = ids.filter((_, index) => results[index].status === 'rejected')
-  const succeededCount = ids.length - failedIds.length
+  const {
+    failedItems: failedIds,
+    succeededCount,
+    firstError
+  } = summarizeBatchResults(ids, results)
   const action = target === 'db' ? '取消登记' : '删除'
 
   if (target === 'db') selectedDbImageIds.value = failedIds
@@ -282,7 +238,6 @@ async function deleteSelectedImages() {
   if (failedIds.length === 0) {
     toast.success(`已批量${action} ${succeededCount} 个镜像`)
   } else {
-    const firstError = results.find(result => result.status === 'rejected')?.reason?.message
     const summary = succeededCount > 0
       ? `已${action} ${succeededCount} 个，${failedIds.length} 个失败`
       : `${failedIds.length} 个镜像均未能${action}`
@@ -299,7 +254,6 @@ async function deleteSelectedImages() {
 
 function openPullModal() {
   pullForm.value = { image: '', tag: 'latest' }
-  pullError.value = ''
   pullModal.value = true
 }
 
@@ -307,12 +261,11 @@ async function pullImage() {
   const image = pullForm.value.image.trim()
   const tag = pullForm.value.tag.trim()
   if (!image) {
-    pullError.value = '请输入镜像名称或仓库地址。'
+    toast.warning('请输入镜像名称或仓库地址')
     return
   }
 
   pullLoading.value = true
-  pullError.value = ''
   try {
     const address = tag ? `${image}:${tag}` : image
     await post(`/servers/${selectedServerId.value}/images/pull`, { image: address })
@@ -320,7 +273,7 @@ async function pullImage() {
     toast.success(`已拉取镜像“${address}”`)
     await loadRemoteImages()
   } catch (error) {
-    pullError.value = `无法拉取镜像：${error.message}`
+    toast.error(`无法拉取镜像：${error.message}`)
   } finally {
     pullLoading.value = false
   }
@@ -336,16 +289,15 @@ watch(selectedServerId, id => {
   remoteSearch.value = ''
   dbImages.value = []
   remoteImages.value = []
-  selectedDbImageIds.value = []
-  selectedRemoteImageIds.value = []
+  clearDbImageSelection()
+  clearRemoteImageSelection()
   batchDeleteTarget.value = ''
   if (!id) {
     dbImagesLoading.value = false
     remoteLoading.value = false
     dbImagesError.value = ''
     remoteError.value = ''
-    lensState.value = 'offline'
-    summary.value = { running: 0, total: 0 }
+    resetSummary()
     return
   }
   reloadAll()
@@ -573,7 +525,6 @@ watch(selectedServerId, id => {
 
     <BaseModal v-if="imageModal" title="登记可申请镜像" size="md" :close-on-backdrop="!imageFormLoading" @close="!imageFormLoading && (imageModal = false)">
       <div class="modal-form">
-        <div v-if="imageFormError" class="alert alert-error" role="alert"><CircleAlert :size="17" />{{ imageFormError }}</div>
         <div class="form-group">
           <label class="form-label" for="image-display-name">展示名称 <span class="required-mark">*</span></label>
           <input id="image-display-name" v-model="imageForm.name" class="form-input" placeholder="例如：Ubuntu 22.04 + CUDA" required />
@@ -600,7 +551,6 @@ watch(selectedServerId, id => {
 
     <BaseModal v-if="pullModal" title="拉取镜像" size="sm" :close-on-backdrop="!pullLoading" @close="!pullLoading && (pullModal = false)">
       <div class="modal-form">
-        <div v-if="pullError" class="alert alert-error" role="alert"><CircleAlert :size="17" />{{ pullError }}</div>
         <div class="form-group">
           <label class="form-label" for="pull-image-name">镜像名称或仓库地址 <span class="required-mark">*</span></label>
           <input id="pull-image-name" v-model="pullForm.image" class="form-input mono" placeholder="ubuntu 或 ghcr.io/org/image" required />
@@ -723,9 +673,23 @@ watch(selectedServerId, id => {
 }
 
 @media (max-width: 680px) {
+  .bulk-table-tools {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
   .bulk-table-tools .search-field {
-    width: auto;
-    min-width: 160px;
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .batch-actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--divider-subtle);
   }
 
   .batch-count {
@@ -741,7 +705,7 @@ watch(selectedServerId, id => {
   }
 
   .batch-actions .btn {
-    width: 30px;
+    width: 34px;
     padding: 0;
   }
 

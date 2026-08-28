@@ -286,29 +286,104 @@ function selectServer(event) {
 @media (max-width: 680px) {
   .server-lens {
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 13px;
+    gap: 10px;
+    min-height: 0;
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid rgba(136, 203, 219, 0.12);
+    border-radius: 18px;
+    background: var(--mobile-dock);
+    box-shadow: 0 8px 24px rgba(18, 37, 47, 0.13);
+  }
+
+  .lens-identity {
+    gap: 10px;
+  }
+
+  .lens-orbit {
+    width: 34px;
+    height: 34px;
+  }
+
+  .lens-orbit-ring {
+    width: 19px;
+    height: 19px;
+  }
+
+  .lens-orbit-dot {
+    width: 7px;
+    height: 7px;
+  }
+
+  .lens-kicker {
+    font-family: var(--font-mono);
+    font-size: 8px;
+  }
+
+  .lens-select {
+    max-width: min(68vw, 260px);
+    font-size: 15px;
   }
 
   .lens-actions {
     justify-content: stretch;
+    gap: 7px;
   }
 
   .lens-actions :deep(.btn) {
     flex: 1;
+    min-width: 0;
+    min-height: 38px;
+    padding-right: 9px;
+    padding-left: 9px;
+    font-size: 12px;
   }
 
   .lens-readings {
     grid-column: auto;
     grid-row: auto;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+    padding-top: 10px;
   }
 
   .lens-reading {
-    min-width: 102px;
-    padding-right: 11px;
-    padding-left: 11px;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 10px;
   }
 
+  .lens-reading:first-child {
+    padding-left: 2px;
+  }
+
+  .lens-reading > svg {
+    display: none;
+  }
+
+  .lens-reading-label {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.035em;
+  }
+
+  .lens-reading-value {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lens-retry {
+    margin-left: 7px;
+    padding: 6px 7px;
+    font-size: 10px;
+  }
 }
 </style>
