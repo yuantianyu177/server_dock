@@ -123,6 +123,30 @@ func TestServerService_Update(t *testing.T) {
 	}
 }
 
+func TestServerService_UpdateClearsDescription(t *testing.T) {
+	svc, _ := setupServerService(t)
+
+	server, err := svc.Create(&dto.CreateServerRequest{
+		Host:        "Server",
+		Hostname:    "1.1.1.1",
+		User:        "root",
+		AuthType:    "password",
+		Credential:  "p",
+		Description: "Existing description",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	resp, err := svc.Update(server.ID, &dto.UpdateServerRequest{Description: ""})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if resp.Description != "" {
+		t.Fatalf("Expected description to be cleared, got %q", resp.Description)
+	}
+}
+
 func TestServerService_UpdateNotFound(t *testing.T) {
 	svc, _ := setupServerService(t)
 	_, err := svc.Update(999, &dto.UpdateServerRequest{Host: "New"})

@@ -2,11 +2,20 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { get } from '@/api/client'
 
+let rememberedServerId = null
+
 export function useServerSelection() {
   const route = useRoute()
   const router = useRouter()
   const servers = ref([])
-  const selectedServerId = ref(null)
+  const currentServerId = ref(null)
+  const selectedServerId = computed({
+    get: () => currentServerId.value,
+    set: (id) => {
+      currentServerId.value = id
+      if (id) rememberedServerId = id
+    }
+  })
   const serversLoading = ref(true)
   const serversError = ref('')
 
@@ -21,7 +30,8 @@ export function useServerSelection() {
       servers.value = await get('/servers') || []
       const queryId = Number(route.query.server)
       const queryServer = servers.value.find(server => Number(server.id) === queryId)
-      selectedServerId.value = queryServer?.id || servers.value[0]?.id || null
+      const rememberedServer = servers.value.find(server => Number(server.id) === Number(rememberedServerId))
+      selectedServerId.value = queryServer?.id || rememberedServer?.id || servers.value[0]?.id || null
     } catch (error) {
       servers.value = []
       selectedServerId.value = null
@@ -32,7 +42,8 @@ export function useServerSelection() {
   }
 
   watch(selectedServerId, (id) => {
-    if (!id || Number(route.query.server) === Number(id)) return
+    if (!id) return
+    if (Number(route.query.server) === Number(id)) return
     router.replace({ query: { ...route.query, server: id } })
   })
 

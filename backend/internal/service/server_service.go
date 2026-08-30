@@ -89,9 +89,7 @@ func (s *ServerService) Update(id uint, req *dto.UpdateServerRequest) (*dto.Serv
 			return nil, errors.New("failed to encrypt credential")
 		}
 	}
-	if req.Description != "" {
-		server.Description = req.Description
-	}
+	server.Description = req.Description
 
 	if err := s.db.Save(server).Error; err != nil {
 		return nil, err
