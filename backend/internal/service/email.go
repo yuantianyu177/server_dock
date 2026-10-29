@@ -385,17 +385,30 @@ func formatPorts(ports []int) string {
 	if len(ports) == 0 {
 		return "-"
 	}
+
 	ports = append([]int(nil), ports...)
 	sort.Ints(ports)
-	if ports[len(ports)-1]-ports[0] == len(ports)-1 {
-		if len(ports) == 1 {
-			return strconv.Itoa(ports[0])
+
+	ranges := make([]string, 0, len(ports))
+	start, end := ports[0], ports[0]
+	for _, port := range ports[1:] {
+		if port == end {
+			continue
 		}
-		return fmt.Sprintf("%d-%d", ports[0], ports[len(ports)-1])
+		if port == end+1 {
+			end = port
+			continue
+		}
+		ranges = append(ranges, formatPortRange(start, end))
+		start, end = port, port
 	}
-	values := make([]string, len(ports))
-	for i, port := range ports {
-		values[i] = strconv.Itoa(port)
+	ranges = append(ranges, formatPortRange(start, end))
+	return strings.Join(ranges, "，")
+}
+
+func formatPortRange(start, end int) string {
+	if start == end {
+		return strconv.Itoa(start)
 	}
-	return strings.Join(values, ", ")
+	return fmt.Sprintf("%d-%d", start, end)
 }

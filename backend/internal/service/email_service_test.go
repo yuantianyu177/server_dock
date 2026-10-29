@@ -409,6 +409,20 @@ func TestRenderApprovalEmail(t *testing.T) {
 	}
 }
 
+func TestRenderApprovalEmailCompactsDiscontinuousExtraPorts(t *testing.T) {
+	html := renderApprovalEmail(
+		"Zhang San",
+		"gpu01.example.com",
+		20000,
+		[]int{20001, 20002, 20004, 20005},
+		"abc123",
+	)
+
+	if !strings.Contains(html, "20001-20002，20004-20005") {
+		t.Fatalf("expected compact extra-port ranges, got %q", html)
+	}
+}
+
 func TestRenderRejectionEmail(t *testing.T) {
 	html := renderRejectionEmail("Li Si", "GPU Server 01", "Ubuntu 22.04")
 
